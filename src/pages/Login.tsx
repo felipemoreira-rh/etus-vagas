@@ -28,19 +28,20 @@ export default function Login() {
   return (
     <div className="auth-shell">
       <div className="auth-hero">
-        <div className="logo">ETUS</div>
+        <div className="logo">
+          <span className="sb-logo-dot" style={{ width: 10, height: 10 }} />
+          ETUS
+        </div>
         <div>
           <h2>
-            Olá, parceiro <span>ETUS</span> =)
+            Gestão integrada em um <span>só lugar</span>.
           </h2>
-          <p style={{ color: 'var(--neutral-300)', marginTop: 16, maxWidth: 480, fontSize: 15, lineHeight: 1.6 }}>
-            Aqui é onde a gente começa a construir novos times. Faça login para abrir vagas e
-            acompanhar cada etapa do processo seletivo junto com o Time de Gente.
+          <p>
+            Recrutamento, Departamento Pessoal e Financeiro no mesmo cockpit. Acompanhe cada vaga,
+            candidato, colaborador e nota fiscal do Grupo ETUS.
           </p>
         </div>
-        <div className="footnote">
-          Time de Gente · Grupo ETUS
-        </div>
+        <div className="footnote">Time de Gente · Grupo ETUS</div>
       </div>
 
       <div className="auth-form-wrap">
@@ -51,7 +52,7 @@ export default function Login() {
           </div>
           {error && <div className="error-text">{error}</div>}
           <div className="field">
-            <label>E-mail</label>
+            <label>E-mail corporativo</label>
             <input
               type="email"
               value={email}
@@ -73,8 +74,8 @@ export default function Login() {
           <button className="btn btn-primary" type="submit" disabled={loading}>
             {loading ? 'Entrando…' : 'Entrar'}
           </button>
-          <p style={{ fontSize: 13 }}>
-            Ainda não tem conta? <Link to="/signup">Criar conta</Link>
+          <p style={{ fontSize: 12 }}>
+            Ainda não tem conta? <Link to="/signup" style={{ color: 'var(--g600)', fontWeight: 600 }}>Criar conta</Link>
           </p>
         </form>
       </div>

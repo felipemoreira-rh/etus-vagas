@@ -1,34 +1,32 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { addDoc, collection, serverTimestamp, Timestamp } from 'firebase/firestore'
+import { addDoc, collection, onSnapshot, query, serverTimestamp, Timestamp, where } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
 import type {
-  Formacao,
-  Jornada,
-  MotivoAbertura,
-  Nivel,
-  Regime,
-  TempoExperiencia,
-  VagaMovimentacao,
+  Formacao, Jornada, MotivoAbertura, Nivel, Regime,
+  TempoExperiencia, UserProfile, VagaMovimentacao,
 } from '../../types'
 
-export default function NovaVaga() {
+/**
+ * Fluxo RH: pode abrir vaga diretamente em nome de um gestor (ou sem gestor vinculado).
+ */
+export default function RhNovaVaga() {
   const { profile } = useAuth()
   const navigate = useNavigate()
+  const [gestores, setGestores] = useState<UserProfile[]>([])
+  const [gestorUid, setGestorUid] = useState<string>('')
 
-  const [empresa, setEmpresa] = useState(profile?.empresa || '')
+  const [empresa, setEmpresa] = useState('')
   const [cargo, setCargo] = useState('')
-  const [time, setTime] = useState(profile?.area || '')
+  const [time, setTime] = useState('')
   const [motivo, setMotivo] = useState<MotivoAbertura>('aumento')
   const [substituidoNome, setSubstituidoNome] = useState('')
   const [justificativaAumento, setJustificativaAumento] = useState('')
   const [regime, setRegime] = useState<Regime>('CLT')
   const [nivel, setNivel] = useState<Nivel>('pleno')
-  const [nivelOutro, setNivelOutro] = useState('')
   const [jornada, setJornada] = useState<Jornada>('hibrido')
-  const [jornadaOutro, setJornadaOutro] = useState('')
   const [tempoExperiencia, setTempoExperiencia] = useState<TempoExperiencia>('sem_minimo')
   const [formacao, setFormacao] = useState<Formacao>('superior_completo')
   const [cursosValidos, setCursosValidos] = useState('')
@@ -40,48 +38,49 @@ export default function NovaVaga() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  useEffect(() => {
+    const q = query(collection(db, 'users'), where('role', '==', 'gestor'))
+    const unsub = onSnapshot(q, (snap) => {
+      const list = snap.docs.map(d => ({ uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) }))
+      list.sort((a, b) => a.name.localeCompare(b.name))
+      setGestores(list)
+    })
+    return unsub
+  }, [])
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!profile) return
     setError(null)
     setSubmitting(true)
     try {
+      const g = gestores.find(x => x.uid === gestorUid)
+      const gUid = g?.uid || profile.uid
+      const gName = g?.name || profile.name
+      const gEmail = g?.email || profile.email
       const inicial: VagaMovimentacao = {
         at: Timestamp.now(),
         byUid: profile.uid,
         byName: profile.name,
         toStatus: 'aberta',
-        nota: 'Vaga aberta pelo gestor.',
+        nota: 'Vaga cadastrada pelo RH.',
       }
       const ref = await addDoc(collection(db, 'vagas'), {
         status: 'aberta',
-        cargo,
-        time,
-        empresa,
+        cargo, time, empresa,
         motivo,
         substituidoNome: motivo === 'substituicao' ? substituidoNome : '',
         justificativaAumento: motivo === 'aumento' ? justificativaAumento : '',
-        regime,
-        nivel,
-        nivelOutro: nivel === 'outro' ? nivelOutro : '',
-        jornada,
-        jornadaOutro: jornada === 'outro' ? jornadaOutro : '',
-        tempoExperiencia,
-        formacao,
-        cursosValidos,
-        descricaoAtividades,
-        requisitosTecnicos,
-        equipamentos,
-        previstaOrcamento,
-        observacoes,
-        gestorUid: profile.uid,
-        gestorNome: profile.name,
-        gestorEmail: profile.email,
+        regime, nivel, jornada, tempoExperiencia, formacao,
+        cursosValidos, descricaoAtividades, requisitosTecnicos, equipamentos,
+        previstaOrcamento, observacoes,
+        gestorUid: gUid, gestorNome: gName, gestorEmail: gEmail,
+        responsavelRhUid: profile.uid, responsavelRhNome: profile.name,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         historico: [inicial],
       })
-      navigate(`/gestor/vagas/${ref.id}`)
+      navigate(`/rh/vagas/${ref.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Falha ao criar vaga.')
     } finally {
@@ -91,12 +90,8 @@ export default function NovaVaga() {
 
   return (
     <>
-      <Topbar title="Abrir nova vaga" icon="＋" />
+      <Topbar title="Nova vaga (RH)" icon="＋" />
       <div className="content">
-        <div className="notif info">
-          Este formulário é a primeira etapa do processo. Após o envio, o Time de Gente entra em contato em até 2 dias úteis para alinhamento do perfil.
-        </div>
-
         <form onSubmit={handleSubmit} className="row-gap-14">
           {error && <div className="error-text">{error}</div>}
 
@@ -104,22 +99,31 @@ export default function NovaVaga() {
             <h3>Identificação</h3>
             <div className="form-grid">
               <div className="field">
-                <label>Empresa do Grupo *</label>
-                <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} required placeholder="Ex.: ETUS" />
+                <label>Empresa *</label>
+                <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} required />
               </div>
               <div className="field">
-                <label>Nome do cargo (para divulgação) *</label>
-                <input value={cargo} onChange={(e) => setCargo(e.target.value)} required placeholder="Ex.: Analista de Retenção Jr." />
+                <label>Cargo (divulgação) *</label>
+                <input value={cargo} onChange={(e) => setCargo(e.target.value)} required />
               </div>
-              <div className="field full">
+              <div className="field">
                 <label>Time / Área *</label>
-                <input value={time} onChange={(e) => setTime(e.target.value)} required placeholder="Ex.: Customer Success" />
+                <input value={time} onChange={(e) => setTime(e.target.value)} required />
+              </div>
+              <div className="field">
+                <label>Gestor responsável</label>
+                <select value={gestorUid} onChange={(e) => setGestorUid(e.target.value)}>
+                  <option value="">— (não vincular) —</option>
+                  {gestores.map(g => (
+                    <option key={g.uid} value={g.uid}>{g.name} · {g.email}</option>
+                  ))}
+                </select>
               </div>
             </div>
           </div>
 
           <div className="panel">
-            <h3>Motivo da abertura</h3>
+            <h3>Motivo</h3>
             <div className="radio-group" style={{ marginBottom: 14 }}>
               {([
                 { v: 'aumento', l: 'Aumento de quadro' },
@@ -138,33 +142,26 @@ export default function NovaVaga() {
               </div>
             ) : (
               <div className="field">
-                <label>Justifique os motivos que levaram ao aumento *</label>
-                <textarea
-                  value={justificativaAumento}
-                  onChange={(e) => setJustificativaAumento(e.target.value)}
-                  required
-                  placeholder="Ex.: novos clientes, novos negócios, etc."
-                />
+                <label>Justificativa *</label>
+                <textarea value={justificativaAumento} onChange={(e) => setJustificativaAumento(e.target.value)} required />
               </div>
             )}
           </div>
 
           <div className="panel">
-            <h3>Condições da vaga</h3>
+            <h3>Condições</h3>
             <div className="form-grid">
               <div className="field">
-                <label>Regime *</label>
-                <div className="radio-group">
-                  {(['CLT','PJ','ESTAGIO','FREELANCER'] as Regime[]).map(r => (
-                    <label key={r} className={'radio-option' + (regime === r ? ' selected' : '')}>
-                      <input type="radio" checked={regime === r} onChange={() => setRegime(r)} />
-                      {r === 'ESTAGIO' ? 'Estágio' : r === 'FREELANCER' ? 'Freelancer' : r}
-                    </label>
-                  ))}
-                </div>
+                <label>Regime</label>
+                <select value={regime} onChange={(e) => setRegime(e.target.value as Regime)}>
+                  <option value="CLT">CLT</option>
+                  <option value="PJ">PJ</option>
+                  <option value="ESTAGIO">Estágio</option>
+                  <option value="FREELANCER">Freelancer</option>
+                </select>
               </div>
               <div className="field">
-                <label>Nível *</label>
+                <label>Nível</label>
                 <select value={nivel} onChange={(e) => setNivel(e.target.value as Nivel)}>
                   <option value="estagiario">Estagiário</option>
                   <option value="trainee">Trainee</option>
@@ -177,34 +174,18 @@ export default function NovaVaga() {
                   <option value="gerente">Gerente</option>
                   <option value="outro">Outro</option>
                 </select>
-                {nivel === 'outro' && (
-                  <input
-                    value={nivelOutro}
-                    onChange={(e) => setNivelOutro(e.target.value)}
-                    placeholder="Descreva o nível"
-                    style={{ marginTop: 6 }}
-                  />
-                )}
               </div>
               <div className="field">
-                <label>Jornada *</label>
+                <label>Jornada</label>
                 <select value={jornada} onChange={(e) => setJornada(e.target.value as Jornada)}>
-                  <option value="hibrido">Híbrido (3 presencial + 2 remoto)</option>
+                  <option value="hibrido">Híbrido</option>
                   <option value="presencial">Presencial</option>
                   <option value="remoto">Remoto</option>
                   <option value="outro">Outro</option>
                 </select>
-                {jornada === 'outro' && (
-                  <input
-                    value={jornadaOutro}
-                    onChange={(e) => setJornadaOutro(e.target.value)}
-                    placeholder="Descreva a jornada"
-                    style={{ marginTop: 6 }}
-                  />
-                )}
               </div>
               <div className="field">
-                <label>Tempo de experiência *</label>
+                <label>Experiência</label>
                 <select value={tempoExperiencia} onChange={(e) => setTempoExperiencia(e.target.value as TempoExperiencia)}>
                   <option value="sem_minimo">Sem tempo mínimo</option>
                   <option value="1_3">1 a 3 anos</option>
@@ -214,7 +195,7 @@ export default function NovaVaga() {
                 </select>
               </div>
               <div className="field">
-                <label>Formação *</label>
+                <label>Formação</label>
                 <select value={formacao} onChange={(e) => setFormacao(e.target.value as Formacao)}>
                   <option value="ensino_medio">Ensino médio</option>
                   <option value="superior_incompleto">Superior incompleto</option>
@@ -224,7 +205,7 @@ export default function NovaVaga() {
                 </select>
               </div>
               <div className="field">
-                <label>Prevista no orçamento? *</label>
+                <label>Prevista no orçamento?</label>
                 <div className="radio-group">
                   <label className={'radio-option' + (previstaOrcamento ? ' selected' : '')}>
                     <input type="radio" checked={previstaOrcamento} onChange={() => setPrevistaOrcamento(true)} /> Sim
@@ -235,8 +216,8 @@ export default function NovaVaga() {
                 </div>
               </div>
               <div className="field full">
-                <label>Cursos válidos (opcional)</label>
-                <input value={cursosValidos} onChange={(e) => setCursosValidos(e.target.value)} placeholder="Ex.: Administração, Engenharia, Marketing" />
+                <label>Cursos válidos</label>
+                <input value={cursosValidos} onChange={(e) => setCursosValidos(e.target.value)} />
               </div>
             </div>
           </div>
@@ -245,30 +226,30 @@ export default function NovaVaga() {
             <h3>Perfil e requisitos</h3>
             <div className="form-grid">
               <div className="field full">
-                <label>Descrição das atividades principais *</label>
+                <label>Atividades principais *</label>
                 <textarea value={descricaoAtividades} onChange={(e) => setDescricaoAtividades(e.target.value)} required />
               </div>
               <div className="field full">
-                <label>Requisitos técnicos obrigatórios * (descreva em tópicos)</label>
+                <label>Requisitos técnicos *</label>
                 <textarea value={requisitosTecnicos} onChange={(e) => setRequisitosTecnicos(e.target.value)} required />
               </div>
               <div className="field full">
-                <label>Equipamentos necessários (opcional)</label>
+                <label>Equipamentos</label>
                 <textarea value={equipamentos} onChange={(e) => setEquipamentos(e.target.value)} />
               </div>
               <div className="field full">
-                <label>Observações (opcional)</label>
+                <label>Observações</label>
                 <textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} />
               </div>
             </div>
           </div>
 
           <div className="hstack" style={{ justifyContent: 'flex-end' }}>
-            <button type="button" className="btn btn-ghost" onClick={() => navigate('/gestor/minhas-vagas')}>
+            <button type="button" className="btn btn-ghost" onClick={() => navigate('/rh/vagas')}>
               Cancelar
             </button>
             <button className="btn btn-primary" type="submit" disabled={submitting}>
-              {submitting ? 'Enviando…' : 'Abrir vaga'}
+              {submitting ? 'Salvando…' : 'Abrir vaga'}
             </button>
           </div>
         </form>

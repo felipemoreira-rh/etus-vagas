@@ -3,9 +3,9 @@ import Sidebar from './Sidebar'
 
 export default function Layout({ children }: { children: ReactNode }) {
   return (
-    <div className="app-shell">
+    <div className="shell">
       <Sidebar />
-      <main className="main">{children}</main>
+      <div className="main">{children}</div>
     </div>
   )
 }
