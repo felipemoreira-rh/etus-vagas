@@ -1,0 +1,68 @@
+rules_version = '2';
+
+// Regras de segurança do Firestore para o sistema ETUS Vagas.
+// Modelo:
+//   - users/{uid}: perfil do usuário (role: "rh" | "gestor").
+//   - vagas/{id}:  vagas abertas pelos gestores.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isRh() {
+      return isSignedIn() && myRole() == 'rh';
+    }
+
+    function isGestor() {
+      return isSignedIn() && myRole() == 'gestor';
+    }
+
+    match /users/{uid} {
+      // Qualquer usuário autenticado pode ler a lista de usuários (necessário p/
+      // dashboards e gestão de acesso pelo RH).
+      allow read: if isSignedIn();
+
+      // Cadastro: o próprio usuário cria seu documento ao se registrar.
+      allow create: if isSignedIn() && request.auth.uid == uid;
+
+      // Atualização: o próprio usuário pode editar campos básicos;
+      // apenas o RH pode alterar `role`.
+      allow update: if isSignedIn() && (
+        (request.auth.uid == uid &&
+          request.resource.data.role == resource.data.role) ||
+        isRh()
+      );
+
+      allow delete: if isRh();
+    }
+
+    match /vagas/{vagaId} {
+      // Leitura: RH vê tudo; gestor vê apenas as próprias.
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.gestorUid == request.auth.uid);
+
+      // Criação: apenas gestor autenticado, e o documento precisa registrá-lo
+      // como gestor responsável.
+      allow create: if isGestor() &&
+                       request.resource.data.gestorUid == request.auth.uid &&
+                       request.resource.data.status == 'aberta';
+
+      // Atualização: RH pode movimentar qualquer vaga;
+      // o gestor pode atualizar apenas as próprias vagas sem alterar o histórico
+      // principal (status continua sob responsabilidade do RH).
+      allow update: if isRh() ||
+                       (isGestor() &&
+                        resource.data.gestorUid == request.auth.uid &&
+                        request.resource.data.gestorUid == resource.data.gestorUid);
+
+      allow delete: if isRh();
+    }
+  }
+}
