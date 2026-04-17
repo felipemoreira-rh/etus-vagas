@@ -24,15 +24,12 @@ import DpEstagiarios from './pages/dp/Estagiarios'
 import DpColaboradores from './pages/dp/Colaboradores'
 import DpPeriodoExperiencia from './pages/dp/PeriodoExperiencia'
 
-// FIN
-import FinDashboard from './pages/fin/Dashboard'
-import FinIfood from './pages/fin/Ifood'
-import FinOutrosPagamentos from './pages/fin/OutrosPagamentos'
-
 // Gestor
 import GestorMinhasVagas from './pages/gestor/MinhasVagas'
 import GestorNovaVaga from './pages/gestor/NovaVaga'
 import GestorVagaDetalhe from './pages/gestor/VagaDetalhe'
+import GestorCandidatos from './pages/gestor/Candidatos'
+import GestorCandidatoDetalhe from './pages/gestor/CandidatoDetalhe'
 
 function RoleRedirect() {
   const { profile, loading } = useAuth()
@@ -83,17 +80,13 @@ export default function App() {
         <Route path="/dp/colaboradores" element={<RhRoute><DpColaboradores /></RhRoute>} />
         <Route path="/dp/periodo-experiencia" element={<RhRoute><DpPeriodoExperiencia /></RhRoute>} />
 
-        {/* FIN — Financeiro & Notas */}
-        <Route path="/fin" element={<Navigate to="/fin/ifood" replace />} />
-        <Route path="/fin/ifood" element={<RhRoute><FinIfood /></RhRoute>} />
-        <Route path="/fin/outros" element={<RhRoute><FinOutrosPagamentos /></RhRoute>} />
-        <Route path="/fin/dashboard" element={<RhRoute><FinDashboard /></RhRoute>} />
-
         {/* Gestor */}
         <Route path="/gestor" element={<Navigate to="/gestor/minhas-vagas" replace />} />
         <Route path="/gestor/minhas-vagas" element={<GestorRoute><GestorMinhasVagas /></GestorRoute>} />
         <Route path="/gestor/nova" element={<GestorRoute><GestorNovaVaga /></GestorRoute>} />
         <Route path="/gestor/vagas/:id" element={<GestorRoute><GestorVagaDetalhe /></GestorRoute>} />
+        <Route path="/gestor/candidatos" element={<GestorRoute><GestorCandidatos /></GestorRoute>} />
+        <Route path="/gestor/candidatos/:id" element={<GestorRoute><GestorCandidatoDetalhe /></GestorRoute>} />
 
         <Route path="/" element={<RoleRedirect />} />
         <Route path="*" element={<Navigate to="/" replace />} />

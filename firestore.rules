@@ -1,15 +1,13 @@
 rules_version = '2';
 
 // Regras de segurança do Firestore para o sistema ETUS Vagas.
-// Modelo (3 módulos integrados):
+// Modelo (2 módulos integrados):
 //   - users/{uid}:              perfil do usuário (role: "rh" | "gestor").
 //   - vagas/{id}:               vagas abertas pelos gestores (módulo RH).
 //   - candidatos/{id}:          candidatos em processo seletivo (módulo RH).
 //   - onboarding/{id}:          checklist de integração de novos contratados (módulo RH).
 //   - estagiarios/{id}:         estagiários ativos/finalizados (módulo DP).
 //   - colaboradores/{id}:       colaboradores e período de experiência (módulo DP).
-//   - notas_ifood/{id}:         notas fiscais do iFood (módulo Financeiro).
-//   - pagamentos/{id}:          outros pagamentos (módulo Financeiro).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -47,6 +45,8 @@ service cloud.firestore {
       allow create: if (isRh() ||
                         (isGestor() && request.resource.data.gestorUid == request.auth.uid)) &&
                        request.resource.data.status == 'aberta';
+      // Gestor pode atualizar a própria vaga (incluindo mudar status) desde
+      // que mantenha gestorUid intacto. RH pode tudo.
       allow update: if isRh() ||
                        (isGestor() &&
                         resource.data.gestorUid == request.auth.uid &&
@@ -55,8 +55,12 @@ service cloud.firestore {
     }
 
     // === Módulo RH ===
+    // Candidatos: RH lê/escreve tudo. Gestor pode ler os candidatos vinculados
+    // a uma vaga de sua responsabilidade (via vagaGestorUid).
     match /candidatos/{id} {
-      allow read, write: if isRh();
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.vagaGestorUid == request.auth.uid);
+      allow write: if isRh();
     }
 
     match /onboarding/{id} {
@@ -64,22 +68,11 @@ service cloud.firestore {
     }
 
     // === Módulo DP — Departamento Pessoal ===
-    // Apenas RH tem acesso por padrão (pode ser refinado no futuro para incluir
-    // um papel 'dp' específico). Gestores não veem dados do DP.
     match /estagiarios/{id} {
       allow read, write: if isRh();
     }
 
     match /colaboradores/{id} {
-      allow read, write: if isRh();
-    }
-
-    // === Módulo Financeiro ===
-    match /notas_ifood/{id} {
-      allow read, write: if isRh();
-    }
-
-    match /pagamentos/{id} {
       allow read, write: if isRh();
     }
   }

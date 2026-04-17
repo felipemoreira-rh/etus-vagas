@@ -205,10 +205,13 @@ function NovoCandidatoModal({ vagas, profileName, profileUid, onClose }: {
       await addDoc(collection(db, 'candidatos'), {
         nome, email, telefone, linkedin,
         vagaId, vagaCargo: vaga.cargo,
+        vagaGestorUid: vaga.gestorUid,
         fase: 'triagem' as CandidatoFase,
         origem,
         score: typeof score === 'number' ? score : null,
         observacoes,
+        relatorios: [],
+        agendamentos: [],
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         historico: [mov],

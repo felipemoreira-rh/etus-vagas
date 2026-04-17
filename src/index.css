@@ -414,3 +414,135 @@ td .tds { font-size: 10px; color: var(--mut); margin-top: 2px; }
 .checklist-item .cl-title { font-weight: 600; font-size: 12px; }
 .checklist-item.done .cl-title { color: var(--g600); text-decoration: line-through; }
 .checklist-item .cl-sub { font-size: 10px; color: var(--mut); margin-top: 2px; }
+
+/* UPLOADS */
+.upload-zone { border: 2px dashed var(--b2); border-radius: var(--r); padding: 22px; text-align: center; background: var(--card2); transition: 0.15s; cursor: pointer; }
+.upload-zone:hover, .upload-zone.drag { border-color: var(--g600); background: var(--g50); }
+.upload-zone input[type=file] { display: none; }
+.upload-zone .up-ico { font-size: 24px; color: var(--g600); margin-bottom: 6px; }
+.upload-zone .up-ttl { font-weight: 700; font-size: 13px; color: var(--txt); }
+.upload-zone .up-sub { font-size: 11px; color: var(--mut); margin-top: 4px; }
+.attach-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--b1); border-radius: 8px; background: #fff; margin-bottom: 8px; }
+.attach-row .att-ico { width: 32px; height: 32px; border-radius: 7px; background: var(--g50); color: var(--g600); display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.attach-row .att-body { flex: 1; min-width: 0; }
+.attach-row .att-name { font-weight: 600; font-size: 12px; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.attach-row .att-meta { font-size: 10px; color: var(--mut); margin-top: 2px; }
+.attach-row .att-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE — tablet (<1024px) + smartphone (<768px) + small (<480px)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Hamburger (escondido em desktop, visível em mobile) */
+.tb-burger { display: none; flex-direction: column; gap: 3px; width: 28px; height: 28px; padding: 6px; background: transparent; border: 1px solid var(--b1); border-radius: 6px; cursor: pointer; align-items: center; justify-content: center; }
+.tb-burger span { display: block; width: 14px; height: 2px; background: var(--n700); border-radius: 2px; }
+.mobile-backdrop { display: none; }
+
+@media (max-width: 1024px) {
+  .tb-burger { display: inline-flex; }
+
+  .shell { grid-template-columns: 1fr; position: relative; }
+
+  /* Sidebar vira slide-out */
+  .sb {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 250px;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 100;
+  }
+  .shell.mobile-open .sb { transform: translateX(0); }
+
+  .mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    z-index: 90;
+    animation: mbd-in 0.2s ease;
+  }
+  @keyframes mbd-in { from { opacity: 0 } to { opacity: 1 } }
+
+  /* Topbar + content compactam */
+  .topbar { padding: 0 14px; height: 54px; }
+  .tb-title { font-size: 14px; }
+  .tb-crumb { display: none; }
+
+  .content { padding: 12px 14px 20px; }
+
+  /* KPIs: 2 colunas em tablet, 1 em mobile */
+  .k4, .k3 { grid-template-columns: repeat(2, 1fr); }
+
+  /* Body grids sempre 1 coluna */
+  .bg-2, .bg-2e, .bg-3 { grid-template-columns: 1fr; }
+  .two-col { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  html, body { font-size: 13px; }
+
+  .k4, .k3, .k2 { grid-template-columns: 1fr; }
+
+  .content { padding: 10px 12px 18px; }
+
+  /* Page header empilha */
+  .page-header { flex-direction: column; align-items: stretch; gap: 8px; }
+  .page-header > div:last-child, .page-header .hstack { flex-wrap: wrap; }
+
+  /* Panels com padding menor */
+  .panel { padding: 12px; }
+  .ph { flex-wrap: wrap; gap: 8px; }
+
+  /* Filtros empilham */
+  .filter-bar { flex-direction: column; align-items: stretch; gap: 8px; }
+  .filter-bar > * { width: 100%; }
+  .swrap { min-width: 0; width: 100%; }
+
+  /* Tabelas com scroll horizontal */
+  .table-wrap { overflow-x: auto; }
+  table { min-width: 560px; font-size: 12px; }
+  th, td { padding: 8px 10px; }
+
+  /* Form: 1 coluna */
+  .form-grid { grid-template-columns: 1fr; }
+
+  /* Topbar buttons compactos */
+  .tb-r { gap: 6px; }
+  .tbtn { padding: 0 10px; font-size: 10.5px; height: 30px; }
+
+  /* Auth: stack vertical */
+  .auth-shell { grid-template-columns: 1fr; }
+  .auth-hero { display: none; }
+  .auth-form-wrap { padding: 32px 20px; }
+
+  /* Funil compacto */
+  .fn-i { grid-template-columns: 90px 1fr 36px 40px; gap: 8px; }
+  .fn-l { font-size: 10.5px; }
+
+  /* KPI value menor */
+  .kc-val { font-size: 22px; }
+  .kc { padding: 12px 14px; }
+
+  /* Modals full width com margem */
+  .modal-backdrop { padding: 12px; }
+  .modal { padding: 16px; }
+
+  /* Upload zone compacto */
+  .upload-zone { padding: 16px; }
+}
+
+@media (max-width: 480px) {
+  .topbar { padding: 0 10px; }
+  .content { padding: 10px 10px 16px; }
+  .page-header h1 { font-size: 17px; }
+  .tb-title { font-size: 13px; }
+  .tb-title span:first-child { display: none; }
+  .tbtn span.hide-sm { display: none; }
+
+  /* Botões mais compactos */
+  .btn { padding: 8px 12px; font-size: 11.5px; }
+
+  /* Sidebar ocupa quase tudo */
+  .sb { width: min(85vw, 280px); }
+}

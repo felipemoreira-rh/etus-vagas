@@ -6,10 +6,9 @@ import {
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
-import FileUpload from '../../components/FileUpload'
 import ScheduleInterviewButton from '../../components/ScheduleInterviewButton'
-import { formatBytes, removeFile, uploadFile } from '../../utils/storage'
-import type { Anexo, Candidato, CandidatoFase, CandidatoMovimentacao } from '../../types'
+import { formatBytes } from '../../utils/storage'
+import type { Candidato, CandidatoFase, CandidatoMovimentacao } from '../../types'
 import { CANDIDATO_FASE_LABEL, CANDIDATO_FASE_ORDER, CANDIDATO_ORIGEM_LABEL } from '../../types'
 
 function formatDate(ts?: { toDate: () => Date } | null) {
@@ -17,14 +16,13 @@ function formatDate(ts?: { toDate: () => Date } | null) {
   try { return ts.toDate().toLocaleString('pt-BR') } catch { return '—' }
 }
 
-export default function CandidatoDetalhe() {
+export default function GestorCandidatoDetalhe() {
   const { id } = useParams()
   const { profile } = useAuth()
   const [c, setC] = useState<Candidato | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [novaFase, setNovaFase] = useState<CandidatoFase>('triagem')
   const [nota, setNota] = useState('')
-  const [score, setScore] = useState<number | ''>('')
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -36,7 +34,6 @@ export default function CandidatoDetalhe() {
           const data = { id: snap.id, ...(snap.data() as Omit<Candidato, 'id'>) }
           setC(data)
           setNovaFase(data.fase)
-          setScore(typeof data.score === 'number' ? data.score : '')
         }
       },
       (e) => setErr(e.message))
@@ -55,66 +52,13 @@ export default function CandidatoDetalhe() {
       }
       await updateDoc(doc(db, 'candidatos', c.id), {
         fase: novaFase,
-        score: typeof score === 'number' ? score : null,
         updatedAt: serverTimestamp(),
         historico: arrayUnion(mov),
       })
       setNota('')
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Erro ao salvar.')
     } finally { setSaving(false) }
-  }
-
-  async function handleUploadCurriculum(file: File) {
-    if (!c || !profile) return
-    if (c.curriculumPath) await removeFile(c.curriculumPath)
-    const up = await uploadFile(file, `candidatos/${c.id}/curriculo`)
-    await updateDoc(doc(db, 'candidatos', c.id), {
-      curriculumUrl: up.url,
-      curriculumNome: up.nome,
-      curriculumPath: up.path,
-      updatedAt: serverTimestamp(),
-    })
-  }
-
-  async function handleUploadRelatorio(file: File) {
-    if (!c || !profile) return
-    const up = await uploadFile(file, `candidatos/${c.id}/relatorios`)
-    const anexo: Anexo = {
-      url: up.url,
-      nome: up.nome,
-      path: up.path,
-      tamanho: up.tamanho,
-      tipo: 'relatorio',
-      uploadedAt: Timestamp.now(),
-      uploadedByUid: profile.uid,
-      uploadedByName: profile.name,
-    }
-    await updateDoc(doc(db, 'candidatos', c.id), {
-      relatorios: arrayUnion(anexo),
-      updatedAt: serverTimestamp(),
-    })
-  }
-
-  async function handleRemoveRelatorio(a: Anexo) {
-    if (!c) return
-    if (!confirm(`Remover relatório "${a.nome}"?`)) return
-    await removeFile(a.path)
-    const novos = (c.relatorios || []).filter(r => r.path !== a.path)
-    await updateDoc(doc(db, 'candidatos', c.id), {
-      relatorios: novos,
-      updatedAt: serverTimestamp(),
-    })
-  }
-
-  async function handleRemoveCurriculo() {
-    if (!c || !c.curriculumPath) return
-    if (!confirm('Remover currículo?')) return
-    await removeFile(c.curriculumPath)
-    await updateDoc(doc(db, 'candidatos', c.id), {
-      curriculumUrl: null,
-      curriculumNome: null,
-      curriculumPath: null,
-      updatedAt: serverTimestamp(),
-    })
   }
 
   return (
@@ -125,7 +69,7 @@ export default function CandidatoDetalhe() {
         actions={
           <>
             {c && <ScheduleInterviewButton candidato={c} />}
-            <Link to="/rh/candidatos" className="tbtn">← Voltar</Link>
+            <Link to="/gestor/candidatos" className="tbtn">← Voltar</Link>
           </>
         }
       />
@@ -157,6 +101,9 @@ export default function CandidatoDetalhe() {
 
               <div className="panel">
                 <h3>Movimentar</h3>
+                <p style={{ color: 'var(--mut)', fontSize: 12, marginBottom: 10 }}>
+                  Você pode mover o candidato entre fases (aprovar, reprovar, marcar entrevista). O RH é notificado automaticamente.
+                </p>
                 <form onSubmit={movimentar} className="row-gap-10">
                   <div className="field">
                     <label>Nova fase</label>
@@ -165,12 +112,8 @@ export default function CandidatoDetalhe() {
                     </select>
                   </div>
                   <div className="field">
-                    <label>Score (0-100)</label>
-                    <input type="number" min={0} max={100} value={score} onChange={(e) => setScore(e.target.value === '' ? '' : Number(e.target.value))} />
-                  </div>
-                  <div className="field">
                     <label>Nota</label>
-                    <textarea value={nota} onChange={(e) => setNota(e.target.value)} />
+                    <textarea value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Feedback, contexto da decisão…" />
                   </div>
                   <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Salvando…' : 'Registrar'}</button>
                 </form>
@@ -185,27 +128,21 @@ export default function CandidatoDetalhe() {
                     <div className="att-ico">📄</div>
                     <div className="att-body">
                       <div className="att-name">{c.curriculumNome || 'Currículo'}</div>
-                      <div className="att-meta">Visível para você e o gestor responsável pela vaga.</div>
+                      <div className="att-meta">Enviado pelo RH.</div>
                     </div>
                     <div className="att-actions">
                       <a href={c.curriculumUrl} target="_blank" rel="noopener noreferrer" className="tbtn">Abrir</a>
-                      <button className="tbtn" onClick={handleRemoveCurriculo} type="button">Remover</button>
                     </div>
                   </div>
                 ) : (
-                  <FileUpload
-                    label="Enviar currículo"
-                    hint="PDF, DOC ou DOCX recomendados."
-                    accept=".pdf,.doc,.docx"
-                    onFile={handleUploadCurriculum}
-                  />
+                  <div className="empty-sub">Currículo ainda não foi anexado pelo RH.</div>
                 )}
               </div>
 
               <div className="panel">
                 <h3>Relatórios de entrevista</h3>
-                {(c.relatorios || []).length > 0 && (
-                  <div style={{ marginBottom: 10 }}>
+                {(c.relatorios || []).length > 0 ? (
+                  <div className="row-gap-10">
                     {(c.relatorios || []).map((a) => (
                       <div className="attach-row" key={a.path}>
                         <div className="att-ico">📋</div>
@@ -217,18 +154,13 @@ export default function CandidatoDetalhe() {
                         </div>
                         <div className="att-actions">
                           <a href={a.url} target="_blank" rel="noopener noreferrer" className="tbtn">Abrir</a>
-                          <button className="tbtn" onClick={() => handleRemoveRelatorio(a)} type="button">Remover</button>
                         </div>
                       </div>
                     ))}
                   </div>
+                ) : (
+                  <div className="empty-sub">Sem relatórios anexados ainda.</div>
                 )}
-                <FileUpload
-                  label="Adicionar relatório"
-                  hint="Feedback da entrevista. Visível para o gestor responsável."
-                  accept=".pdf,.doc,.docx,.txt"
-                  onFile={handleUploadRelatorio}
-                />
               </div>
             </div>
 

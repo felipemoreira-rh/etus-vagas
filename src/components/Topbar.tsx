@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom'
 import { useModule } from '../contexts/ModuleContext'
 import { useAuth } from '../contexts/AuthContext'
+import { useLayout } from './Layout'
 import { MODULE_LABEL } from '../types'
 import type { ReactNode } from 'react'
 
@@ -14,14 +15,23 @@ export default function Topbar({ title, icon = '◈', actions }: TopbarProps) {
   const { module } = useModule()
   const { profile } = useAuth()
   const location = useLocation()
+  const { mobileOpen, setMobileOpen } = useLayout()
 
   const crumb = profile?.role === 'gestor'
-    ? 'Gestor — Minhas Vagas'
+    ? 'Gestor'
     : MODULE_LABEL[module]
 
   return (
     <header className="topbar">
       <div className="tb-l">
+        <button
+          type="button"
+          className="tb-burger"
+          onClick={() => setMobileOpen(!mobileOpen)}
+          aria-label="Menu"
+        >
+          <span /><span /><span />
+        </button>
         <div className="tb-title">
           <span>{icon}</span>
           <span>{title}</span>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, onSnapshot, query } from 'firebase/firestore'
+import { collection, deleteDoc, doc, onSnapshot, query } from 'firebase/firestore'
 import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
 import StatusBadge from '../../components/StatusBadge'
@@ -78,6 +78,16 @@ export default function TodasVagas() {
     URL.revokeObjectURL(url)
   }
 
+  async function excluirVaga(v: Vaga) {
+    const txt = `Excluir a vaga "${v.cargo}"?\n\nEssa ação é permanente.`
+    if (!confirm(txt)) return
+    try {
+      await deleteDoc(doc(db, 'vagas', v.id))
+    } catch (e) {
+      alert('Erro ao excluir: ' + (e instanceof Error ? e.message : String(e)))
+    }
+  }
+
   return (
     <>
       <Topbar
@@ -132,7 +142,7 @@ export default function TodasVagas() {
                     <th>Status</th>
                     <th>Aberta em</th>
                     <th style={{ textAlign: 'right' }}>Dias</th>
-                    <th style={{ width: 80 }}></th>
+                    <th style={{ width: 140 }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -146,7 +156,18 @@ export default function TodasVagas() {
                       <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(v.createdAt)}</td>
                       <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700 }}>{daysSince(v.createdAt)}</td>
                       <td>
-                        <Link to={`/rh/vagas/${v.id}`} className="tbtn" style={{ height: 26 }}>Abrir →</Link>
+                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                          <Link to={`/rh/vagas/${v.id}`} className="tbtn" style={{ height: 26 }}>Abrir</Link>
+                          <button
+                            type="button"
+                            onClick={() => excluirVaga(v)}
+                            className="tbtn"
+                            style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                            title="Excluir vaga"
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

@@ -14,18 +14,16 @@ export interface UserProfile {
 }
 
 // ═════════════════════════ MÓDULOS ═════════════════════════
-export type ModuleKey = 'rh' | 'dp' | 'fin'
+export type ModuleKey = 'rh' | 'dp'
 
 export const MODULE_LABEL: Record<ModuleKey, string> = {
   rh: 'RH — Recrutamento',
   dp: 'DP — Departamento Pessoal',
-  fin: 'Financeiro & Notas',
 }
 
 export const MODULE_SHORT: Record<ModuleKey, string> = {
   rh: 'RH',
   dp: 'DP',
-  fin: 'Financeiro',
 }
 
 // ═════════════════════════ VAGAS (RH) ═════════════════════════
@@ -194,6 +192,31 @@ export interface CandidatoMovimentacao {
   nota?: string
 }
 
+export interface Anexo {
+  url: string
+  nome: string
+  path: string
+  uploadedAt: Timestamp
+  uploadedByUid: string
+  uploadedByName: string
+  tamanho?: number
+  tipo?: 'curriculo' | 'relatorio' | 'outro'
+}
+
+export interface AgendamentoEntrevista {
+  id: string
+  titulo: string
+  inicio: Timestamp
+  fim: Timestamp
+  participantes?: string[]
+  local?: string
+  observacoes?: string
+  calendarUrl?: string
+  criadoPorUid: string
+  criadoPorNome: string
+  criadoEm: Timestamp
+}
+
 export interface Candidato {
   id: string
   nome: string
@@ -205,6 +228,7 @@ export interface Candidato {
 
   vagaId: string
   vagaCargo: string
+  vagaGestorUid?: string
 
   fase: CandidatoFase
   score?: number // 0–100
@@ -213,6 +237,10 @@ export interface Candidato {
 
   observacoes?: string
   curriculumUrl?: string
+  curriculumNome?: string
+  curriculumPath?: string
+  relatorios?: Anexo[]
+  agendamentos?: AgendamentoEntrevista[]
 
   createdAt: Timestamp
   updatedAt: Timestamp

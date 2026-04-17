@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
-  arrayUnion, doc, onSnapshot, Timestamp, updateDoc, serverTimestamp,
+  arrayUnion, deleteDoc, doc, onSnapshot, Timestamp, updateDoc, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -13,6 +13,7 @@ import { STATUS_LABELS, STATUS_ORDER } from '../../types'
 
 export default function VagaDetalheRh() {
   const { id } = useParams()
+  const navigate = useNavigate()
   const { profile } = useAuth()
   const [vaga, setVaga] = useState<Vaga | null>(null)
   const [loading, setLoading] = useState(true)
@@ -66,6 +67,18 @@ export default function VagaDetalheRh() {
     }
   }
 
+  async function excluir() {
+    if (!vaga) return
+    const txt = `Excluir a vaga "${vaga.cargo}"?\n\nEssa ação é permanente. Candidatos vinculados NÃO são removidos automaticamente.`
+    if (!confirm(txt)) return
+    try {
+      await deleteDoc(doc(db, 'vagas', vaga.id))
+      navigate('/rh/vagas', { replace: true })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao excluir.')
+    }
+  }
+
   return (
     <>
       <Topbar
@@ -74,6 +87,9 @@ export default function VagaDetalheRh() {
         actions={
           <>
             <Link to="/rh/candidatos" className="tbtn">Candidatos</Link>
+            <button type="button" className="tbtn" onClick={excluir} style={{ color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}>
+              Excluir vaga
+            </button>
             <Link to="/rh/vagas" className="tbtn">← Voltar</Link>
           </>
         }

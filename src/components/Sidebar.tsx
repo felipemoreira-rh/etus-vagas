@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useModule } from '../contexts/ModuleContext'
+import { useLayout } from './Layout'
 import type { ModuleKey } from '../types'
 
 interface NavItem {
@@ -24,16 +25,12 @@ const NAV: Record<ModuleKey, NavItem[]> = {
     { to: '/dp/colaboradores', label: 'Colaboradores', icon: '◉' },
     { to: '/dp/periodo-experiencia', label: 'Período de Experiência', icon: '⧗' },
   ],
-  fin: [
-    { to: '/fin/ifood', label: 'iFood', icon: '◆' },
-    { to: '/fin/outros', label: 'Outros Pagamentos', icon: '◱' },
-    { to: '/fin/dashboard', label: 'Dashboard Financeiro', icon: '◈' },
-  ],
 }
 
 const GESTOR_NAV: NavItem[] = [
   { to: '/gestor/minhas-vagas', label: 'Minhas vagas', icon: '◱' },
   { to: '/gestor/nova', label: 'Abrir nova vaga', icon: '＋' },
+  { to: '/gestor/candidatos', label: 'Candidatos', icon: '◉' },
 ]
 
 function initials(name?: string | null) {
@@ -49,6 +46,7 @@ export default function Sidebar() {
   const { module, setModule } = useModule()
   const location = useLocation()
   const navigate = useNavigate()
+  const { setMobileOpen } = useLayout()
 
   const isRh = profile?.role === 'rh'
   const navItems = isRh ? NAV[module] : GESTOR_NAV
@@ -63,6 +61,11 @@ export default function Sidebar() {
     setModule(m)
     const first = NAV[m][0]
     navigate(first.to)
+    setMobileOpen(false)
+  }
+
+  function handleNavClick() {
+    setMobileOpen(false)
   }
 
   return (
@@ -97,15 +100,6 @@ export default function Sidebar() {
               DP — Dept. Pessoal
               <span className="mdot" />
             </div>
-            <div
-              className={'sb-mod' + (module === 'fin' ? ' on' : '')}
-              onClick={() => switchModule('fin')}
-              role="button"
-              tabIndex={0}
-            >
-              Financeiro & Notas
-              <span className="mdot" />
-            </div>
           </div>
         </div>
       )}
@@ -118,6 +112,7 @@ export default function Sidebar() {
             <Link
               key={item.to}
               to={item.to}
+              onClick={handleNavClick}
               className={'sb-item' + (active ? ' on' : '')}
             >
               <span className="sb-icon">{item.icon}</span>
