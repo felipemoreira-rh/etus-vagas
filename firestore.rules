@@ -60,7 +60,13 @@ service cloud.firestore {
     match /candidatos/{id} {
       allow read: if isRh() ||
                      (isGestor() && resource.data.vagaGestorUid == request.auth.uid);
-      allow write: if isRh();
+      allow create, delete: if isRh();
+      // Gestor pode atualizar candidatos das próprias vagas (mover fase, anotar).
+      // RH pode tudo. Em ambos os casos, vagaGestorUid não pode ser alterado.
+      allow update: if isRh() ||
+                       (isGestor() &&
+                        resource.data.vagaGestorUid == request.auth.uid &&
+                        request.resource.data.vagaGestorUid == resource.data.vagaGestorUid);
     }
 
     match /onboarding/{id} {
