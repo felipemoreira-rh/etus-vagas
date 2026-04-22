@@ -18,6 +18,7 @@ export default [
         document: 'readonly',
         console: 'readonly',
         localStorage: 'readonly',
+        navigator: 'readonly',
         fetch: 'readonly',
         alert: 'readonly',
         confirm: 'readonly',
