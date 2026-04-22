@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { createUserWithEmailAndPassword, signOut, updateProfile } from 'firebase/auth'
 import { db, getSecondaryAuth, getSecondaryDb } from '../../firebase'
-import { useAuth } from '../../contexts/AuthContext'
+import { BLOCKED_USERS_COLLECTION, useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
 import type { Role, UserProfile } from '../../types'
 
@@ -30,11 +30,23 @@ export default function Usuarios() {
   async function excluirAcesso(u: UserProfile) {
     if (u.uid === profile?.uid) return
     const txt = `Remover o acesso de "${u.name}" (${u.email})?\n\n` +
-      `Isto apaga o perfil do Firestore — a pessoa não conseguirá mais usar o sistema.\n` +
-      `A conta no Firebase Authentication permanece existindo; pra removê-la por completo use o console Firebase.\n\n` +
+      `Isto apaga o perfil do Firestore e marca o uid como bloqueado —\n` +
+      `mesmo que a pessoa ainda consiga autenticar (conta Firebase Auth\n` +
+      `continua existindo), o sistema não vai deixar o acesso voltar.\n\n` +
+      `Pra remover a conta Firebase Auth por completo, use o console Firebase.\n\n` +
       `Confirmar?`
     if (!confirm(txt)) return
     try {
+      // Marca primeiro como bloqueado — assim se a pessoa tentar logar via
+      // Google entre o setDoc e o deleteDoc abaixo, o AuthContext já
+      // reconhece o bloqueio e não recria o perfil. Grava também email e
+      // blockedBy pro RH conseguir auditar depois.
+      await setDoc(doc(db, BLOCKED_USERS_COLLECTION, u.uid), {
+        email: u.email,
+        blockedAt: serverTimestamp(),
+        blockedByUid: profile?.uid ?? null,
+        blockedByName: profile?.name ?? null,
+      })
       await deleteDoc(doc(db, 'users', u.uid))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao remover acesso.')
@@ -121,16 +133,32 @@ export default function Usuarios() {
 function genPassword() {
   // Senha temporária forte. Evita caracteres ambíguos (0/O, 1/l, I) pra ser
   // fácil de ditar pra pessoa no WhatsApp ou e-mail.
+  //
+  // Usa crypto.getRandomValues em vez de Math.random() — Math.random não é
+  // cryptographicamente seguro (Xorshift128+ em V8) e em tese pode ser
+  // previsto se o estado interno vazar. Também substituímos o
+  // `sort(() => Math.random() - 0.5)` por um Fisher-Yates real, que
+  // produz uma permutação uniforme (o sort aleatório é enviesado).
   const alpha = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz'
   const digits = '23456789'
   const symbols = '!@#$%&*'
   const all = alpha + digits + symbols
-  let pw = ''
-  pw += alpha[Math.floor(Math.random() * alpha.length)]
-  pw += digits[Math.floor(Math.random() * digits.length)]
-  pw += symbols[Math.floor(Math.random() * symbols.length)]
-  for (let i = 0; i < 9; i++) pw += all[Math.floor(Math.random() * all.length)]
-  return pw.split('').sort(() => Math.random() - 0.5).join('')
+  const len = 12
+  const rand = new Uint32Array(len)
+  crypto.getRandomValues(rand)
+  const pw: string[] = []
+  pw.push(alpha[rand[0] % alpha.length])
+  pw.push(digits[rand[1] % digits.length])
+  pw.push(symbols[rand[2] % symbols.length])
+  for (let i = 3; i < len; i++) pw.push(all[rand[i] % all.length])
+  // Fisher-Yates com crypto.getRandomValues (permutação uniforme).
+  const shuf = new Uint32Array(pw.length)
+  crypto.getRandomValues(shuf)
+  for (let i = pw.length - 1; i > 0; i--) {
+    const j = shuf[i] % (i + 1)
+    ;[pw[i], pw[j]] = [pw[j], pw[i]]
+  }
+  return pw.join('')
 }
 
 function NovoUsuarioModal({ onClose }: { onClose: () => void }) {

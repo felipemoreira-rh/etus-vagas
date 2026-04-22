@@ -39,6 +39,17 @@ service cloud.firestore {
       allow delete: if isRh();
     }
 
+    // Usuários cujo acesso foi revogado pelo RH (fluxo "Remover acesso" na
+    // tela Usuários). A presença de `blocked_users/{uid}` impede que o
+    // AuthContext re-crie o doc `users/{uid}` no próximo login via Google.
+    // - Leitura: o próprio usuário (pra o AuthContext checar seu bloqueio)
+    //   e RH (pra auditar/gerenciar).
+    // - Escrita: apenas RH.
+    match /blocked_users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isRh());
+      allow write: if isRh();
+    }
+
     match /vagas/{vagaId} {
       allow read: if isRh() ||
                      (isGestor() && resource.data.gestorUid == request.auth.uid);

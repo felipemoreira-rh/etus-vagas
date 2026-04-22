@@ -39,6 +39,8 @@ export default [
         HTMLTextAreaElement: 'readonly',
         Event: 'readonly',
         DragEvent: 'readonly',
+        crypto: 'readonly',
+        Uint32Array: 'readonly',
       },
     },
     plugins: {

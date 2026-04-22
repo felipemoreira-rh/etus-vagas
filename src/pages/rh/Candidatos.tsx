@@ -6,6 +6,7 @@ import {
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
+import { removeFile } from '../../utils/storage'
 import type {
   Candidato, CandidatoFase, CandidatoMovimentacao, CandidatoOrigem, Vaga,
 } from '../../types'
@@ -65,9 +66,21 @@ export default function Candidatos() {
   const ativos = candidatos.filter(c => !['aprovado','reprovado','desistente'].includes(c.fase)).length
 
   async function excluir(c: Candidato) {
-    const txt = `Excluir o candidato "${c.nome}"?\n\nEssa ação é permanente. O histórico e os anexos vinculados serão removidos.`
+    const txt = `Excluir o candidato "${c.nome}"?\n\nEssa ação é permanente. O histórico e os anexos vinculados (CV + relatórios) serão removidos.`
     if (!confirm(txt)) return
     try {
+      // Remove primeiro os anexos do Storage pra não deixar lixo acumulando
+      // custo depois que o doc some. removeFile ignora 'object-not-found',
+      // então um arquivo já ausente não quebra a exclusão. Usamos
+      // Promise.allSettled pra garantir que um erro isolado (ex.: permissão
+      // pontual de um relatório) não impeça a exclusão do doc principal —
+      // melhor ficar um anexo órfão do que um candidato "zumbi" no Firestore.
+      const paths: string[] = []
+      if (c.curriculumPath) paths.push(c.curriculumPath)
+      for (const r of c.relatorios ?? []) {
+        if (r.path) paths.push(r.path)
+      }
+      await Promise.allSettled(paths.map((p) => removeFile(p)))
       await deleteDoc(doc(db, 'candidatos', c.id))
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Erro ao excluir candidato.')

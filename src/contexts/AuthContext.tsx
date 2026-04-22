@@ -18,6 +18,8 @@ import { auth, db } from '../firebase'
 import type { Role, UserProfile } from '../types'
 import { isEmailAllowed } from '../utils/authAllowlist'
 
+export const BLOCKED_USERS_COLLECTION = 'blocked_users'
+
 interface AuthContextValue {
   user: User | null
   profile: UserProfile | null
@@ -58,23 +60,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // o RoleRedirect mandaria o usuário de volta pro /login.
             const isGoogle = u.providerData.some((p) => p.providerId === 'google.com')
             if (isGoogle && u.email && isEmailAllowed(u.email)) {
-              const defaults = {
-                email: u.email,
-                name: u.displayName ?? u.email,
-                role: 'gestor' as Role,
-                empresa: '',
-                area: '',
-                createdAt: serverTimestamp(),
+              // Antes de re-criar o doc, verifica se esse uid foi bloqueado
+              // pelo RH (fluxo "Remover acesso" na tela Usuários). Se
+              // estiver bloqueado, fazemos signOut e deixamos profile=null
+              // pra evitar que um usuário cujo acesso foi revogado
+              // reconquiste acesso só clicando em "Entrar com Google".
+              const blockedRef = doc(db, BLOCKED_USERS_COLLECTION, u.uid)
+              const blockedSnap = await getDoc(blockedRef)
+              if (blockedSnap.exists()) {
+                await signOut(auth)
+                setProfile(null)
+              } else {
+                const defaults = {
+                  email: u.email,
+                  name: u.displayName ?? u.email,
+                  role: 'gestor' as Role,
+                  empresa: '',
+                  area: '',
+                  createdAt: serverTimestamp(),
+                }
+                await setDoc(ref, defaults)
+                setProfile({
+                  uid: u.uid,
+                  email: defaults.email,
+                  name: defaults.name,
+                  role: defaults.role,
+                  empresa: defaults.empresa,
+                  area: defaults.area,
+                })
               }
-              await setDoc(ref, defaults)
-              setProfile({
-                uid: u.uid,
-                email: defaults.email,
-                name: defaults.name,
-                role: defaults.role,
-                empresa: defaults.empresa,
-                area: defaults.area,
-              })
             } else {
               setProfile(null)
             }
