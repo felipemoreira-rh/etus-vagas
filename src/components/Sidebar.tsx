@@ -17,6 +17,7 @@ const NAV: Record<ModuleKey, NavItem[]> = {
     { to: '/rh/vagas', label: 'Vagas', icon: '◱' },
     { to: '/rh/candidatos', label: 'Candidatos', icon: '◉' },
     { to: '/rh/onboarding', label: 'Onboarding', icon: '⚑' },
+    { to: '/rh/sorteios', label: 'Sorteios', icon: '🎁' },
     { to: '/rh/usuarios', label: 'Usuários', icon: '◔' },
   ],
   dp: [

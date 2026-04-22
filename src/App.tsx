@@ -17,6 +17,9 @@ import RhCandidatoDetalhe from './pages/rh/CandidatoDetalhe'
 import RhOnboarding from './pages/rh/Onboarding'
 import RhOnboardingDetalhe from './pages/rh/OnboardingDetalhe'
 import RhUsuarios from './pages/rh/Usuarios'
+import RhSorteios from './pages/rh/Sorteios'
+import RhSorteioDetalhe from './pages/rh/SorteioDetalhe'
+import SorteioPublico from './pages/SorteioPublico'
 
 // DP
 import DpDashboard from './pages/dp/Dashboard'
@@ -61,6 +64,9 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
 
+        {/* Página pública do sorteio — sem Layout nem ProtectedRoute */}
+        <Route path="/sorteio/:id" element={<SorteioPublico />} />
+
         {/* RH — Recrutamento */}
         <Route path="/rh" element={<Navigate to="/rh/indicadores" replace />} />
         <Route path="/rh/indicadores" element={<RhRoute><RhIndicadores /></RhRoute>} />
@@ -72,6 +78,8 @@ export default function App() {
         <Route path="/rh/onboarding" element={<RhRoute><RhOnboarding /></RhRoute>} />
         <Route path="/rh/onboarding/:id" element={<RhRoute><RhOnboardingDetalhe /></RhRoute>} />
         <Route path="/rh/usuarios" element={<RhRoute><RhUsuarios /></RhRoute>} />
+        <Route path="/rh/sorteios" element={<RhRoute><RhSorteios /></RhRoute>} />
+        <Route path="/rh/sorteios/:id" element={<RhRoute><RhSorteioDetalhe /></RhRoute>} />
 
         {/* DP — Departamento Pessoal */}
         <Route path="/dp" element={<Navigate to="/dp/dashboard" replace />} />

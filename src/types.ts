@@ -431,3 +431,58 @@ export const REGIME_LABEL: Record<Regime, string> = {
   ESTAGIO: 'Estágio',
   FREELANCER: 'Freelancer',
 }
+
+// ═════════════════════════ SORTEIOS ═════════════════════════
+// Feature stand-alone: RH cria sorteio, página pública recebe inscrições
+// com login Google (bloqueio por domínio corporativo). O sistema sorteia
+// 1 vencedor aleatório dentro da janela configurada pelo RH.
+export type SorteioStatus = 'rascunho' | 'inscricoes_abertas' | 'aguardando_sorteio' | 'sorteado' | 'cancelado'
+
+export const SORTEIO_STATUS_LABEL: Record<SorteioStatus, string> = {
+  rascunho: 'Rascunho',
+  inscricoes_abertas: 'Inscrições abertas',
+  aguardando_sorteio: 'Aguardando sorteio',
+  sorteado: 'Sorteado',
+  cancelado: 'Cancelado',
+}
+
+export interface Sorteio {
+  id: string
+  titulo: string
+  descricao?: string
+  premio: string
+
+  // Informativo só pra exibição — "data do evento do prêmio".
+  dataEvento?: Timestamp
+
+  // Janela em que o botão "Sortear" fica habilitado pro RH. Inscrições
+  // são automaticamente fechadas quando `janelaSorteioInicio` passa.
+  janelaSorteioInicio: Timestamp
+  janelaSorteioFim: Timestamp
+
+  status: SorteioStatus
+
+  // Metadados de criação.
+  criadoPorUid: string
+  criadoPorNome: string
+  criadoEm: Timestamp
+
+  // Vencedor (preenchido quando sorteado).
+  vencedorUid?: string
+  vencedorNome?: string
+  vencedorEmail?: string
+  sorteadoEm?: Timestamp
+  sorteadoPorUid?: string
+  sorteadoPorNome?: string
+
+  // Contador denormalizado pra exibir na lista sem precisar ler a
+  // subcoleção inteira. Atualizado a cada inscrição.
+  totalInscritos?: number
+}
+
+export interface SorteioParticipante {
+  uid: string
+  nome: string
+  email: string
+  inscritoEm: Timestamp
+}

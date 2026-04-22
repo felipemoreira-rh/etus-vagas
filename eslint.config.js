@@ -41,6 +41,8 @@ export default [
         DragEvent: 'readonly',
         crypto: 'readonly',
         Uint32Array: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
       },
     },
     plugins: {
