@@ -1,11 +1,17 @@
-# ETUS · Sistema de Abertura de Vagas
+# ETUS · Gestão Integrada (RH + DP + Financeiro)
 
-Sistema web para o Grupo ETUS gerenciar abertura de vagas pelos gestores e acompanhamento/movimentação pelo time de RH (Time de Gente), construído com **React + Vite + Firebase (Auth + Firestore)**.
+Sistema web do Grupo ETUS que reúne em um único cockpit três módulos integrados, construído com **React + Vite + Firebase (Auth + Firestore)**:
 
-- **Gestor**: abre novas vagas (formulário baseado no questionário atual), acompanha o andamento e consulta histórico.
-- **RH**: vê dashboard consolidado (KPIs, gráficos por status, empresa, time, regime), lista todas as vagas, movimenta status, registra notas e gerencia permissões de usuários.
+- **RH — Recrutamento**: indicadores com KPIs/SLA/funil de candidatos, listagem de vagas com filtros, detalhe da vaga com movimentação de status, pipeline de candidatos com score e origem, onboarding com checklist de integração e gestão de usuários.
+- **DP — Departamento Pessoal**: dashboard com indicadores de colaboradores/estagiários, CRUD de estagiários, diretório de colaboradores e acompanhamento de **período de experiência (45/90 dias)**.
+- **Financeiro & Notas**: registro e aprovação de notas iFood, outros pagamentos categorizados (reembolso, bônus, mobilidade, etc.) e dashboard financeiro com gráficos dos últimos 6 meses.
 
-Tipografia **Space Grotesk** e paleta da marca aplicadas via CSS variables (`src/index.css`).
+Dois perfis de acesso:
+
+- **Gestor**: abre novas vagas (formulário baseado no questionário atual do Time de Gente) e acompanha o andamento de cada vaga e histórico. Não vê dados de DP ou Financeiro.
+- **RH**: acessa os 3 módulos completos, movimenta status das vagas, gerencia candidatos/onboarding, administra DP e o Financeiro, e promove/rebaixa outros usuários.
+
+Tipografia **Space Grotesk** e paleta ETUS (verdes + neutros) aplicadas via CSS variables em `src/index.css`.
 
 ---
 
@@ -130,38 +136,56 @@ firebase deploy --only firestore:rules
 
 ```
 src/
-  components/        Layout, Sidebar, StatusBadge, KpiCard, ProtectedRoute
-  contexts/          AuthContext (login, signup, profile/role)
+  components/        Layout, Sidebar, Topbar, KpiCard, StatusBadge, ProtectedRoute
+  contexts/          AuthContext (login, signup, profile/role), ModuleContext (módulo ativo)
   pages/
     Login.tsx        Signup.tsx
     gestor/          MinhasVagas, NovaVaga, VagaDetalhe
-    rh/              Dashboard, TodasVagas, VagaDetalhe, Usuarios
-    shared/          VagaDetalheView (visual da vaga compartilhado)
+    rh/              Indicadores, TodasVagas, NovaVaga, VagaDetalhe,
+                     Candidatos, CandidatoDetalhe, Onboarding, OnboardingDetalhe, Usuarios
+    dp/              Dashboard, Estagiarios, Colaboradores, PeriodoExperiencia
+    fin/             Dashboard, Ifood, OutrosPagamentos
+    shared/          VagaDetalheView
   firebase.ts        Inicialização do SDK do Firebase
-  types.ts           Tipagens (Vaga, UserProfile, VagaStatus…)
+  types.ts           Tipagens (Vaga, Candidato, Estagiario, Colaborador, NotaIfood, Pagamento…)
   index.css          Tema com Space Grotesk e paleta ETUS
 ```
 
 ### Modelo de dados no Firestore
 
 - **`users/{uid}`**: `{ name, email, role: 'rh' | 'gestor', empresa, area, createdAt }`
-- **`vagas/{vagaId}`**: todos os campos do formulário + `status`, `gestorUid`, `gestorNome`, `gestorEmail`, `createdAt`, `updatedAt`, `responsavelRhUid`, `responsavelRhNome`, `historico[]`.
+- **`vagas/{id}`**: todos os campos do formulário + `status`, `gestorUid/Nome/Email`, `responsavelRhUid/Nome`, `historico[]`.
+- **`candidatos/{id}`**: `{ nome, email, telefone, linkedin, vagaId, vagaCargo, fase, score, origem, historico[] }`.
+- **`onboarding/{id}`**: `{ candidatoNome, vagaId, vagaCargo, empresa, status, checklist[] }`.
+- **`estagiarios/{id}`**: `{ nome, curso, instituicao, empresa, area, mentor, dataInicio, dataTermino, bolsa, status }`.
+- **`colaboradores/{id}`**: `{ nome, cargo, area, empresa, regime, dataAdmissao, salario, status, experiencia{ resultado45, resultado90 } }`.
+- **`notas_ifood/{id}`**: `{ data, restaurante, colaboradorNome, empresa, area, valor, status }`.
+- **`pagamentos/{id}`**: `{ data, descricao, categoria, valor, colaboradorNome, empresa, area, status }`.
+
+Regras em `firestore.rules`:
+
+- **Vagas**: gestor só vê as próprias; RH vê tudo e é quem movimenta status.
+- **Candidatos, Onboarding, Estagiários, Colaboradores, Notas iFood, Pagamentos**: acesso restrito ao RH.
 
 ### Status possíveis de uma vaga
 
 `aberta → triagem → entrevistas → proposta → contratada`
 Mais: `pausada`, `cancelada`.
 
-Apenas usuários com `role = 'rh'` podem movimentar status. O histórico é registrado automaticamente em `historico[]`.
+### Fases possíveis de um candidato
+
+`triagem → teste_online → entrevista_rh → entrevista_gestor → entrevista_cultura → proposta → aprovado`
+Terminais adicionais: `reprovado`, `desistente`.
 
 ---
 
 ## 8. Próximos passos sugeridos
 
 - Deploy em Firebase Hosting (seção 5).
-- Criar templates de vagas por área para reduzir retrabalho dos gestores.
-- Integração com LinkedIn/Indeed via Cloud Functions.
-- Notificações por e-mail quando uma vaga muda de status.
+- Upload de currículos/anexos no Firebase Storage (notas iFood, comprovantes de pagamento, CVs).
+- Notificações por e-mail ao movimentar vaga, criar candidato ou aprovar pagamento.
+- Integração com LinkedIn/Indeed via Cloud Functions para captar candidatos automaticamente.
+- Papel dedicado `dp` / `financeiro` (hoje tudo é consolidado no papel `rh`).
 
 ---
 

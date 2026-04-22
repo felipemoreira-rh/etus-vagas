@@ -1,120 +1,152 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { arrayUnion, doc, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { Link, useParams } from 'react-router-dom'
-import { Timestamp } from 'firebase/firestore'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import {
+  arrayUnion, deleteDoc, doc, onSnapshot, Timestamp, updateDoc, serverTimestamp,
+} from 'firebase/firestore'
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
+import Topbar from '../../components/Topbar'
 import StatusBadge from '../../components/StatusBadge'
 import VagaDetalheView from '../shared/VagaDetalheView'
-import { STATUS_LABELS, STATUS_ORDER, type Vaga, type VagaStatus } from '../../types'
+import type { Vaga, VagaStatus, VagaMovimentacao } from '../../types'
+import { STATUS_LABELS, STATUS_ORDER } from '../../types'
 
-export default function VagaDetalhe() {
-  const { id } = useParams<{ id: string }>()
-  const { user, profile } = useAuth()
+export default function VagaDetalheRh() {
+  const { id } = useParams()
+  const navigate = useNavigate()
+  const { profile } = useAuth()
   const [vaga, setVaga] = useState<Vaga | null>(null)
   const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
 
-  const [novoStatus, setNovoStatus] = useState<VagaStatus>('aberta')
+  const [novoStatus, setNovoStatus] = useState<VagaStatus>('triagem')
   const [nota, setNota] = useState('')
   const [saving, setSaving] = useState(false)
-  const [feedback, setFeedback] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
-    const unsub = onSnapshot(doc(db, 'vagas', id), (snap) => {
-      if (snap.exists()) {
-        const data = { id: snap.id, ...(snap.data() as Omit<Vaga, 'id'>) }
-        setVaga(data)
-        setNovoStatus(data.status)
-      } else {
-        setVaga(null)
-      }
-      setLoading(false)
-    })
+    const unsub = onSnapshot(doc(db, 'vagas', id),
+      (snap) => {
+        if (!snap.exists()) setErr('Vaga não encontrada.')
+        else {
+          const v = { id: snap.id, ...(snap.data() as Omit<Vaga, 'id'>) }
+          setVaga(v)
+          setNovoStatus(v.status)
+        }
+        setLoading(false)
+      },
+      (e) => { setErr(e.message); setLoading(false) })
     return unsub
   }, [id])
 
-  async function atualizarStatus(e: FormEvent) {
+  async function movimentar(e: FormEvent) {
     e.preventDefault()
-    if (!vaga || !user || !profile) return
+    if (!vaga || !profile) return
     setSaving(true)
-    setError(null)
-    setFeedback(null)
     try {
+      const mov: VagaMovimentacao = {
+        at: Timestamp.now(),
+        byUid: profile.uid,
+        byName: profile.name,
+        fromStatus: vaga.status,
+        toStatus: novoStatus,
+        nota: nota || undefined,
+      }
       await updateDoc(doc(db, 'vagas', vaga.id), {
         status: novoStatus,
         updatedAt: serverTimestamp(),
-        responsavelRhUid: user.uid,
+        historico: arrayUnion(mov),
+        responsavelRhUid: profile.uid,
         responsavelRhNome: profile.name,
-        historico: arrayUnion({
-          at: Timestamp.now(),
-          byUid: user.uid,
-          byName: profile.name,
-          fromStatus: vaga.status,
-          toStatus: novoStatus,
-          nota: nota || '',
-        }),
       })
       setNota('')
-      setFeedback('Status atualizado com sucesso.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha ao atualizar.')
+      setErr(err instanceof Error ? err.message : 'Erro ao salvar.')
     } finally {
       setSaving(false)
     }
   }
 
-  if (loading) return <div className="empty-state">Carregando…</div>
-  if (!vaga) return <div className="empty-state">Vaga não encontrada.</div>
+  async function excluir() {
+    if (!vaga) return
+    const txt = `Excluir a vaga "${vaga.cargo}"?\n\nEssa ação é permanente. Candidatos vinculados NÃO são removidos automaticamente.`
+    if (!confirm(txt)) return
+    try {
+      await deleteDoc(doc(db, 'vagas', vaga.id))
+      navigate('/rh/vagas', { replace: true })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao excluir.')
+    }
+  }
 
   return (
     <>
-      <div className="page-header">
-        <div>
-          <Link to="/rh/vagas" className="muted" style={{ fontSize: 13 }}>
-            ← Voltar para todas as vagas
-          </Link>
-          <h1 style={{ marginTop: 8 }}>{vaga.cargo}</h1>
-          <p>
-            {vaga.empresa} · {vaga.time} · Gestor: {vaga.gestorNome}
-          </p>
-        </div>
-        <StatusBadge status={vaga.status} />
-      </div>
-
-      <div className="card" style={{ marginBottom: 20, background: 'var(--green-50)', borderColor: 'var(--green-100)' }}>
-        <h3>Movimentar status</h3>
-        {error && <div className="error-text" style={{ marginBottom: 10 }}>{error}</div>}
-        {feedback && <div className="success-text" style={{ marginBottom: 10 }}>{feedback}</div>}
-        <form onSubmit={atualizarStatus} className="form-grid">
-          <div className="field">
-            <label>Novo status</label>
-            <select value={novoStatus} onChange={(e) => setNovoStatus(e.target.value as VagaStatus)}>
-              {STATUS_ORDER.map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label>Registrar nota (opcional)</label>
-            <input
-              value={nota}
-              onChange={(e) => setNota(e.target.value)}
-              placeholder="Ex.: Aguardando retorno do candidato final."
-            />
-          </div>
-          <div className="full" style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button type="submit" className="btn btn-primary" disabled={saving || novoStatus === vaga.status && !nota}>
-              {saving ? 'Salvando…' : 'Salvar movimentação'}
+      <Topbar
+        title={vaga?.cargo || 'Detalhe da vaga'}
+        icon="◱"
+        actions={
+          <>
+            <Link to="/rh/candidatos" className="tbtn">Candidatos</Link>
+            <button type="button" className="tbtn" onClick={excluir} style={{ color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}>
+              Excluir vaga
             </button>
-          </div>
-        </form>
-      </div>
+            <Link to="/rh/vagas" className="tbtn">← Voltar</Link>
+          </>
+        }
+      />
+      <div className="content">
+        {loading && <div className="empty-state">Carregando…</div>}
+        {err && <div className="error-text">{err}</div>}
+        {vaga && (
+          <>
+            <div className="panel hstack" style={{ padding: 14 }}>
+              <div>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mut)', fontWeight: 700, marginBottom: 4 }}>
+                  Status atual
+                </div>
+                <StatusBadge status={vaga.status} />
+              </div>
+              <div className="ml-auto hstack" style={{ gap: 18 }}>
+                <div>
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mut)', fontWeight: 700 }}>
+                    Empresa
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{vaga.empresa}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mut)', fontWeight: 700 }}>
+                    Gestor
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{vaga.gestorNome}</div>
+                </div>
+              </div>
+            </div>
 
-      <VagaDetalheView vaga={vaga} />
+            <div className="panel">
+              <h3>Movimentar status</h3>
+              <form onSubmit={movimentar} className="form-grid" style={{ alignItems: 'end' }}>
+                <div className="field">
+                  <label>Novo status</label>
+                  <select value={novoStatus} onChange={(e) => setNovoStatus(e.target.value as VagaStatus)}>
+                    {STATUS_ORDER.map(s => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Nota (opcional)</label>
+                  <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Contexto da movimentação" />
+                </div>
+                <div className="field full" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button className="btn btn-primary" type="submit" disabled={saving}>
+                    {saving ? 'Salvando…' : 'Registrar movimentação'}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <VagaDetalheView vaga={vaga} />
+          </>
+        )}
+      </div>
     </>
   )
 }

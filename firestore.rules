@@ -1,9 +1,13 @@
 rules_version = '2';
 
 // Regras de segurança do Firestore para o sistema ETUS Vagas.
-// Modelo:
-//   - users/{uid}: perfil do usuário (role: "rh" | "gestor").
-//   - vagas/{id}:  vagas abertas pelos gestores.
+// Modelo (2 módulos integrados):
+//   - users/{uid}:              perfil do usuário (role: "rh" | "gestor").
+//   - vagas/{id}:               vagas abertas pelos gestores (módulo RH).
+//   - candidatos/{id}:          candidatos em processo seletivo (módulo RH).
+//   - onboarding/{id}:          checklist de integração de novos contratados (módulo RH).
+//   - estagiarios/{id}:         estagiários ativos/finalizados (módulo DP).
+//   - colaboradores/{id}:       colaboradores e período de experiência (módulo DP).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -25,44 +29,57 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      // Qualquer usuário autenticado pode ler a lista de usuários (necessário p/
-      // dashboards e gestão de acesso pelo RH).
       allow read: if isSignedIn();
-
-      // Cadastro: o próprio usuário cria seu documento ao se registrar.
       allow create: if isSignedIn() && request.auth.uid == uid;
-
-      // Atualização: o próprio usuário pode editar campos básicos;
-      // apenas o RH pode alterar `role`.
       allow update: if isSignedIn() && (
         (request.auth.uid == uid &&
           request.resource.data.role == resource.data.role) ||
         isRh()
       );
-
       allow delete: if isRh();
     }
 
     match /vagas/{vagaId} {
-      // Leitura: RH vê tudo; gestor vê apenas as próprias.
       allow read: if isRh() ||
                      (isGestor() && resource.data.gestorUid == request.auth.uid);
-
-      // Criação: apenas gestor autenticado, e o documento precisa registrá-lo
-      // como gestor responsável.
-      allow create: if isGestor() &&
-                       request.resource.data.gestorUid == request.auth.uid &&
+      allow create: if (isRh() ||
+                        (isGestor() && request.resource.data.gestorUid == request.auth.uid)) &&
                        request.resource.data.status == 'aberta';
-
-      // Atualização: RH pode movimentar qualquer vaga;
-      // o gestor pode atualizar apenas as próprias vagas sem alterar o histórico
-      // principal (status continua sob responsabilidade do RH).
+      // Gestor pode atualizar a própria vaga (incluindo mudar status) desde
+      // que mantenha gestorUid intacto. RH pode tudo.
       allow update: if isRh() ||
                        (isGestor() &&
                         resource.data.gestorUid == request.auth.uid &&
                         request.resource.data.gestorUid == resource.data.gestorUid);
-
       allow delete: if isRh();
+    }
+
+    // === Módulo RH ===
+    // Candidatos: RH lê/escreve tudo. Gestor pode ler os candidatos vinculados
+    // a uma vaga de sua responsabilidade (via vagaGestorUid).
+    match /candidatos/{id} {
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.vagaGestorUid == request.auth.uid);
+      allow create, delete: if isRh();
+      // Gestor pode atualizar candidatos das próprias vagas (mover fase, anotar).
+      // RH pode tudo. Em ambos os casos, vagaGestorUid não pode ser alterado.
+      allow update: if isRh() ||
+                       (isGestor() &&
+                        resource.data.vagaGestorUid == request.auth.uid &&
+                        request.resource.data.vagaGestorUid == resource.data.vagaGestorUid);
+    }
+
+    match /onboarding/{id} {
+      allow read, write: if isRh();
+    }
+
+    // === Módulo DP — Departamento Pessoal ===
+    match /estagiarios/{id} {
+      allow read, write: if isRh();
+    }
+
+    match /colaboradores/{id} {
+      allow read, write: if isRh();
     }
   }
 }
