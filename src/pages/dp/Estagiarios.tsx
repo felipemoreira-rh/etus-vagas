@@ -180,8 +180,9 @@ function EstagiarioModal({ estagiario, onClose }: { estagiario?: Estagiario, onC
       if (isEdit && estagiario) {
         await updateDoc(doc(db, 'estagiarios', estagiario.id), {
           nome, email, curso, instituicao, empresa, area, mentor,
-          dataInicio: dataInicio ? new Date(dataInicio) : null,
-          dataTermino: dataTermino ? new Date(dataTermino) : null,
+          // Parse as local-time midnight (não UTC) pra evitar off-by-one em UTC-3.
+          dataInicio: dataInicio ? new Date(dataInicio + 'T00:00:00') : null,
+          dataTermino: dataTermino ? new Date(dataTermino + 'T00:00:00') : null,
           bolsa: typeof bolsa === 'number' ? bolsa : null,
           status,
           updatedAt: serverTimestamp(),
@@ -189,8 +190,8 @@ function EstagiarioModal({ estagiario, onClose }: { estagiario?: Estagiario, onC
       } else {
         await addDoc(collection(db, 'estagiarios'), {
           nome, email, curso, instituicao, empresa, area, mentor,
-          dataInicio: dataInicio ? new Date(dataInicio) : null,
-          dataTermino: dataTermino ? new Date(dataTermino) : null,
+          dataInicio: dataInicio ? new Date(dataInicio + 'T00:00:00') : null,
+          dataTermino: dataTermino ? new Date(dataTermino + 'T00:00:00') : null,
           bolsa: typeof bolsa === 'number' ? bolsa : null,
           status: 'ativo',
           createdAt: serverTimestamp(),

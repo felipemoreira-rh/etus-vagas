@@ -184,7 +184,8 @@ function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador,
       if (isEdit && colaborador) {
         await updateDoc(doc(db, 'colaboradores', colaborador.id), {
           nome, email, cargo, area, empresa, regime,
-          dataAdmissao: dataAdmissao ? new Date(dataAdmissao) : null,
+          // Parse as local-time midnight (não UTC) pra evitar off-by-one em UTC-3.
+          dataAdmissao: dataAdmissao ? new Date(dataAdmissao + 'T00:00:00') : null,
           salario: typeof salario === 'number' ? salario : null,
           status,
           updatedAt: serverTimestamp(),
@@ -192,7 +193,7 @@ function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador,
       } else {
         await addDoc(collection(db, 'colaboradores'), {
           nome, email, cargo, area, empresa, regime,
-          dataAdmissao: dataAdmissao ? new Date(dataAdmissao) : null,
+          dataAdmissao: dataAdmissao ? new Date(dataAdmissao + 'T00:00:00') : null,
           salario: typeof salario === 'number' ? salario : null,
           status: 'ativo',
           createdAt: serverTimestamp(),

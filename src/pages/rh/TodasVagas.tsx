@@ -69,7 +69,9 @@ export default function TodasVagas() {
 
   function exportCsv() {
     const csv = toCsv(filtered)
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    // Prepend UTF-8 BOM pra Excel detectar o encoding corretamente em Windows
+    // (sem isso, caracteres PT-BR como "ã", "ç", "é" viram mojibake).
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url

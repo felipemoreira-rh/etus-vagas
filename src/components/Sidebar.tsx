@@ -58,9 +58,9 @@ export default function Sidebar() {
 
   function switchModule(m: ModuleKey) {
     if (!isRh) return
+    // setModule já navega pra home do módulo (ModuleContext.MODULE_HOME);
+    // não chamar navigate aqui pra evitar duplicar entrada no histórico.
     setModule(m)
-    const first = NAV[m][0]
-    navigate(first.to)
     setMobileOpen(false)
   }
 
