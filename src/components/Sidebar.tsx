@@ -72,8 +72,7 @@ export default function Sidebar() {
     <aside className="sb">
       <div className="sb-top">
         <div className="sb-logo">
-          <span className="sb-logo-dot" />
-          ETUS
+          <img src="/logo-etus.png" alt="ETUS" className="sb-logo-img" />
         </div>
         <div className="sb-logo-sub">Gestão integrada</div>
       </div>

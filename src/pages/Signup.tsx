@@ -34,8 +34,7 @@ export default function Signup() {
     <div className="auth-shell">
       <div className="auth-hero">
         <div className="logo">
-          <span className="sb-logo-dot" style={{ width: 10, height: 10 }} />
-          ETUS
+          <img src="/logo-etus.png" alt="ETUS" className="auth-logo-img" />
         </div>
         <div>
           <h2>

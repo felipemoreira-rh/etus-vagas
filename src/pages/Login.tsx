@@ -29,16 +29,15 @@ export default function Login() {
     <div className="auth-shell">
       <div className="auth-hero">
         <div className="logo">
-          <span className="sb-logo-dot" style={{ width: 10, height: 10 }} />
-          ETUS
+          <img src="/logo-etus.png" alt="ETUS" className="auth-logo-img" />
         </div>
         <div>
           <h2>
             Gestão integrada em um <span>só lugar</span>.
           </h2>
           <p>
-            Recrutamento, Departamento Pessoal e Financeiro no mesmo cockpit. Acompanhe cada vaga,
-            candidato, colaborador e nota fiscal do Grupo ETUS.
+            Recrutamento e Departamento Pessoal no mesmo cockpit. Acompanhe cada vaga,
+            candidato e colaborador do Grupo ETUS.
           </p>
         </div>
         <div className="footnote">Time de Gente · Grupo ETUS</div>
