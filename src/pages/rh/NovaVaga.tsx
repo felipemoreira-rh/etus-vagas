@@ -54,10 +54,15 @@ export default function RhNovaVaga() {
     setError(null)
     setSubmitting(true)
     try {
+      // Se o RH selecionou "(não vincular)", deixamos os campos vazios em vez
+      // de usar o próprio RH como gestor — senão as regras de Firestore pro
+      // gestor (vagaGestorUid == request.auth.uid) esconderiam candidatos
+      // dessa vaga de todos os gestores reais e o RH acabaria aparecendo
+      // como "gestor" na tela de detalhe da vaga.
       const g = gestores.find(x => x.uid === gestorUid)
-      const gUid = g?.uid || profile.uid
-      const gName = g?.name || profile.name
-      const gEmail = g?.email || profile.email
+      const gUid = g?.uid ?? ''
+      const gName = g?.name ?? ''
+      const gEmail = g?.email ?? ''
       const inicial: VagaMovimentacao = {
         at: Timestamp.now(),
         byUid: profile.uid,
