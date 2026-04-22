@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { collection, onSnapshot, query } from 'firebase/firestore'
 import { Link } from 'react-router-dom'
 import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend,
+  Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, LabelList,
 } from 'recharts'
 import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
@@ -17,7 +17,15 @@ import {
 
 const SLA_META_DIAS = 30
 
-const PIE_COLORS = ['#066E3E', '#3BE476', '#8DF768', '#C5F07A', '#F0EE7A', '#A0E3F3', '#F5B3D8']
+const STATUS_COLORS: Record<VagaStatus, string> = {
+  aberta: '#066E3E',
+  triagem: '#3BE476',
+  entrevistas: '#8DF768',
+  proposta: '#C5F07A',
+  contratada: '#066E3E',
+  pausada: '#F0EE7A',
+  cancelada: '#F5B3D8',
+}
 
 function daysBetween(a: Date, b: Date) {
   return Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24))
@@ -67,7 +75,9 @@ export default function Indicadores() {
   const vagasByStatus = useMemo(() => {
     const map = new Map<VagaStatus, number>()
     vagas.forEach(v => map.set(v.status, (map.get(v.status) ?? 0) + 1))
-    return [...map.entries()].map(([status, value]) => ({ name: STATUS_LABELS[status], value }))
+    return [...map.entries()]
+      .map(([status, value]) => ({ status, name: STATUS_LABELS[status], value }))
+      .sort((a, b) => b.value - a.value)
   }, [vagas])
 
   const vagasByTime = useMemo(() => {
@@ -215,22 +225,24 @@ export default function Indicadores() {
               <div className="empty-sub">Sem dados ainda.</div>
             ) : (
               <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie
-                    data={vagasByStatus}
+                <BarChart data={vagasByStatus} layout="vertical" margin={{ left: 24, right: 28, top: 8, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" horizontal={false} />
+                  <XAxis type="number" fontSize={11} allowDecimals={false} />
+                  <YAxis dataKey="name" type="category" fontSize={11} width={110} />
+                  <Tooltip cursor={{ fill: 'rgba(6,110,62,0.06)' }} />
+                  <Bar
                     dataKey="value"
-                    nameKey="name"
-                    innerRadius={48}
-                    outerRadius={80}
-                    paddingAngle={2}
+                    radius={[0, 6, 6, 0]}
+                    isAnimationActive
+                    animationDuration={900}
+                    animationEasing="ease-out"
                   >
-                    {vagasByStatus.map((_, i) => (
-                      <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                    {vagasByStatus.map((entry) => (
+                      <Cell key={entry.status} fill={STATUS_COLORS[entry.status] ?? '#066E3E'} />
                     ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 11 }} />
-                </PieChart>
+                    <LabelList dataKey="value" position="right" style={{ fontSize: 11, fontWeight: 700 }} />
+                  </Bar>
+                </BarChart>
               </ResponsiveContainer>
             )}
           </div>

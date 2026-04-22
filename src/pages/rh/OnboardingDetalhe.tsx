@@ -27,22 +27,34 @@ export default function OnboardingDetalhe() {
     if (!ob || !profile) return
     const updated = (ob.checklist || []).map(c => {
       if (c.id !== itemId) return c
-      return {
-        ...c,
-        done: !c.done,
-        doneAt: !c.done ? Timestamp.now() : undefined,
-        doneByUid: !c.done ? profile.uid : undefined,
-        doneByName: !c.done ? profile.name : undefined,
+      const willBeDone = !c.done
+      if (willBeDone) {
+        return {
+          ...c,
+          done: true,
+          doneAt: Timestamp.now(),
+          doneByUid: profile.uid,
+          doneByName: profile.name,
+        }
       }
+      // Desmarca: remove campos de conclusão (Firestore não aceita `undefined`
+      // em campos aninhados por padrão, então precisamos omiti-los).
+      const { doneAt: _a, doneByUid: _b, doneByName: _c, ...rest } = c
+      void _a; void _b; void _c
+      return { ...rest, done: false }
     })
     const allDone = updated.every(c => c.done)
     const anyDone = updated.some(c => c.done)
     const status = allDone ? 'concluido' : anyDone ? 'em_andamento' : 'pendente'
-    await updateDoc(doc(db, 'onboarding', ob.id), {
-      checklist: updated,
-      status,
-      updatedAt: serverTimestamp(),
-    })
+    try {
+      await updateDoc(doc(db, 'onboarding', ob.id), {
+        checklist: updated,
+        status,
+        updatedAt: serverTimestamp(),
+      })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao atualizar item.')
+    }
   }
 
   const done = (ob?.checklist || []).filter(c => c.done).length

@@ -1,13 +1,26 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { addDoc, collection, onSnapshot, query, serverTimestamp } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
 import type { Colaborador, RegimeTrabalho } from '../../types'
 import { REGIME_TRABALHO_LABEL } from '../../types'
 
+type ColaboradorStatus = Colaborador['status']
+
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
   try { return ts.toDate().toLocaleDateString('pt-BR') } catch { return '—' }
+}
+
+function toDateInput(ts?: { toDate: () => Date } | null): string {
+  if (!ts) return ''
+  try {
+    const d = ts.toDate()
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  } catch { return '' }
 }
 
 export default function Colaboradores() {
@@ -16,6 +29,7 @@ export default function Colaboradores() {
   const [search, setSearch] = useState('')
   const [statusF, setStatusF] = useState<string>('todos')
   const [openModal, setOpenModal] = useState(false)
+  const [editing, setEditing] = useState<Colaborador | null>(null)
 
   useEffect(() => {
     const unsub = onSnapshot(query(collection(db, 'colaboradores')), (s) => {
@@ -37,6 +51,15 @@ export default function Colaboradores() {
       return true
     })
   }, [items, search, statusF])
+
+  async function excluir(c: Colaborador) {
+    if (!confirm(`Excluir o colaborador "${c.nome}"?\n\nEssa ação é permanente.`)) return
+    try {
+      await deleteDoc(doc(db, 'colaboradores', c.id))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir colaborador.')
+    }
+  }
 
   return (
     <>
@@ -81,6 +104,7 @@ export default function Colaboradores() {
                     <th>Regime</th>
                     <th>Admissão</th>
                     <th>Status</th>
+                    <th style={{ width: 100 }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -103,6 +127,28 @@ export default function Colaboradores() {
                            c.status === 'afastado' ? 'Afastado' : 'Desligado'}
                         </span>
                       </td>
+                      <td>
+                        <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                          <button
+                            type="button"
+                            className="tbtn"
+                            onClick={() => setEditing(c)}
+                            title="Editar"
+                            style={{ height: 26 }}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            className="tbtn"
+                            onClick={() => excluir(c)}
+                            title="Excluir"
+                            style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -112,34 +158,47 @@ export default function Colaboradores() {
         </div>
       </div>
 
-      {openModal && <NovoColaboradorModal onClose={() => setOpenModal(false)} />}
+      {openModal && <ColaboradorModal onClose={() => setOpenModal(false)} />}
+      {editing && <ColaboradorModal colaborador={editing} onClose={() => setEditing(null)} />}
     </>
   )
 }
 
-function NovoColaboradorModal({ onClose }: { onClose: () => void }) {
-  const [nome, setNome] = useState('')
-  const [email, setEmail] = useState('')
-  const [cargo, setCargo] = useState('')
-  const [area, setArea] = useState('')
-  const [empresa, setEmpresa] = useState('')
-  const [regime, setRegime] = useState<RegimeTrabalho>('clt')
-  const [dataAdmissao, setDataAdmissao] = useState('')
-  const [salario, setSalario] = useState<number | ''>('')
+function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador, onClose: () => void }) {
+  const isEdit = !!colaborador
+  const [nome, setNome] = useState(colaborador?.nome ?? '')
+  const [email, setEmail] = useState(colaborador?.email ?? '')
+  const [cargo, setCargo] = useState(colaborador?.cargo ?? '')
+  const [area, setArea] = useState(colaborador?.area ?? '')
+  const [empresa, setEmpresa] = useState(colaborador?.empresa ?? '')
+  const [regime, setRegime] = useState<RegimeTrabalho>(colaborador?.regime ?? 'clt')
+  const [dataAdmissao, setDataAdmissao] = useState(toDateInput(colaborador?.dataAdmissao))
+  const [salario, setSalario] = useState<number | ''>(typeof colaborador?.salario === 'number' ? colaborador.salario : '')
+  const [status, setStatus] = useState<ColaboradorStatus>(colaborador?.status ?? 'ativo')
   const [saving, setSaving] = useState(false)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setSaving(true)
     try {
-      await addDoc(collection(db, 'colaboradores'), {
-        nome, email, cargo, area, empresa, regime,
-        dataAdmissao: dataAdmissao ? new Date(dataAdmissao) : null,
-        salario: typeof salario === 'number' ? salario : null,
-        status: 'ativo',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      })
+      if (isEdit && colaborador) {
+        await updateDoc(doc(db, 'colaboradores', colaborador.id), {
+          nome, email, cargo, area, empresa, regime,
+          dataAdmissao: dataAdmissao ? new Date(dataAdmissao) : null,
+          salario: typeof salario === 'number' ? salario : null,
+          status,
+          updatedAt: serverTimestamp(),
+        })
+      } else {
+        await addDoc(collection(db, 'colaboradores'), {
+          nome, email, cargo, area, empresa, regime,
+          dataAdmissao: dataAdmissao ? new Date(dataAdmissao) : null,
+          salario: typeof salario === 'number' ? salario : null,
+          status: 'ativo',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      }
       onClose()
     } finally { setSaving(false) }
   }
@@ -147,7 +206,7 @@ function NovoColaboradorModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Novo colaborador</h2>
+        <h2>{isEdit ? 'Editar colaborador' : 'Novo colaborador'}</h2>
         <form onSubmit={handleSubmit} className="row-gap-14">
           <div className="form-grid">
             <div className="field"><label>Nome *</label><input value={nome} onChange={(e) => setNome(e.target.value)} required /></div>
@@ -166,10 +225,21 @@ function NovoColaboradorModal({ onClose }: { onClose: () => void }) {
             </div>
             <div className="field"><label>Data de admissão *</label><input type="date" value={dataAdmissao} onChange={(e) => setDataAdmissao(e.target.value)} required /></div>
             <div className="field"><label>Salário (R$)</label><input type="number" min={0} step={0.01} value={salario} onChange={(e) => setSalario(e.target.value === '' ? '' : Number(e.target.value))} /></div>
+            {isEdit && (
+              <div className="field">
+                <label>Status</label>
+                <select value={status} onChange={(e) => setStatus(e.target.value as ColaboradorStatus)}>
+                  <option value="ativo">Ativo</option>
+                  <option value="ferias">Férias</option>
+                  <option value="afastado">Afastado</option>
+                  <option value="desligado">Desligado</option>
+                </select>
+              </div>
+            )}
           </div>
           <div className="hstack" style={{ justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Salvando…' : 'Cadastrar'}</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Salvando…' : (isEdit ? 'Salvar' : 'Cadastrar')}</button>
           </div>
         </form>
       </div>

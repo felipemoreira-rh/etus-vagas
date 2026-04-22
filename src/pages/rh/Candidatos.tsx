@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  addDoc, collection, onSnapshot, query, serverTimestamp, Timestamp,
+  addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, Timestamp,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -63,6 +63,16 @@ export default function Candidatos() {
   }, [candidatos])
 
   const ativos = candidatos.filter(c => !['aprovado','reprovado','desistente'].includes(c.fase)).length
+
+  async function excluir(c: Candidato) {
+    const txt = `Excluir o candidato "${c.nome}"?\n\nEssa ação é permanente. O histórico e os anexos vinculados serão removidos.`
+    if (!confirm(txt)) return
+    try {
+      await deleteDoc(doc(db, 'candidatos', c.id))
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erro ao excluir candidato.')
+    }
+  }
 
   return (
     <>
@@ -127,7 +137,7 @@ export default function Candidatos() {
                     <th>Fase</th>
                     <th>Origem</th>
                     <th>Score</th>
-                    <th style={{ width: 80 }}></th>
+                    <th style={{ width: 140 }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -151,7 +161,18 @@ export default function Candidatos() {
                         ) : <span className="muted">—</span>}
                       </td>
                       <td>
-                        <Link to={`/rh/candidatos/${c.id}`} className="tbtn" style={{ height: 26 }}>Abrir →</Link>
+                        <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                          <Link to={`/rh/candidatos/${c.id}`} className="tbtn" style={{ height: 26 }}>Abrir →</Link>
+                          <button
+                            type="button"
+                            className="tbtn"
+                            onClick={() => excluir(c)}
+                            title="Excluir candidato"
+                            style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}

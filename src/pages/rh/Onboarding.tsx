@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { addDoc, collection, onSnapshot, query, serverTimestamp } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp } from 'firebase/firestore'
 import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
 import type { Onboarding as OnboardingType, OnboardingItem, Vaga } from '../../types'
@@ -41,6 +41,16 @@ export default function Onboarding() {
     const emAnd = items.filter(i => i.status === 'em_andamento').length
     return { total, concluidos, emAnd }
   }, [items])
+
+  async function excluir(o: OnboardingType) {
+    const txt = `Excluir o onboarding de "${o.candidatoNome}"?\n\nEssa ação é permanente.`
+    if (!confirm(txt)) return
+    try {
+      await deleteDoc(doc(db, 'onboarding', o.id))
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Erro ao excluir onboarding.')
+    }
+  }
 
   return (
     <>
@@ -83,7 +93,7 @@ export default function Onboarding() {
                   <th>Empresa</th>
                   <th>Status</th>
                   <th>Progresso</th>
-                  <th style={{ width: 80 }}></th>
+                  <th style={{ width: 140 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -108,7 +118,18 @@ export default function Onboarding() {
                         <span style={{ fontSize: 10, fontWeight: 700, marginLeft: 4 }}>{done}/{total}</span>
                       </td>
                       <td>
-                        <Link to={`/rh/onboarding/${o.id}`} className="tbtn" style={{ height: 26 }}>Abrir →</Link>
+                        <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                          <Link to={`/rh/onboarding/${o.id}`} className="tbtn" style={{ height: 26 }}>Abrir →</Link>
+                          <button
+                            type="button"
+                            className="tbtn"
+                            onClick={() => excluir(o)}
+                            title="Excluir onboarding"
+                            style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                          >
+                            ✕
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   )
