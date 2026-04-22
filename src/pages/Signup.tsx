@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import type { Role } from '../types'
+import { allowedDomainsHuman, isEmailAllowed } from '../utils/authAllowlist'
 
 export default function Signup() {
   const { signup } = useAuth()
@@ -18,6 +19,10 @@ export default function Signup() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    if (!isEmailAllowed(email)) {
+      setError(`Somente e-mails corporativos (${allowedDomainsHuman()}) podem se cadastrar aqui. Fale com o RH se precisar de um acesso externo.`)
+      return
+    }
     setLoading(true)
     try {
       await signup({ email, password, name, role, empresa, area })

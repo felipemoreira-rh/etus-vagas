@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { collection, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
+import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore'
 import { createUserWithEmailAndPassword, signOut, updateProfile } from 'firebase/auth'
 import { db, getSecondaryAuth, getSecondaryDb } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
@@ -25,6 +25,20 @@ export default function Usuarios() {
   async function changeRole(u: UserProfile, role: Role) {
     if (u.uid === profile?.uid) return
     await updateDoc(doc(db, 'users', u.uid), { role })
+  }
+
+  async function excluirAcesso(u: UserProfile) {
+    if (u.uid === profile?.uid) return
+    const txt = `Remover o acesso de "${u.name}" (${u.email})?\n\n` +
+      `Isto apaga o perfil do Firestore — a pessoa não conseguirá mais usar o sistema.\n` +
+      `A conta no Firebase Authentication permanece existindo; pra removê-la por completo use o console Firebase.\n\n` +
+      `Confirmar?`
+    if (!confirm(txt)) return
+    try {
+      await deleteDoc(doc(db, 'users', u.uid))
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao remover acesso.')
+    }
   }
 
   return (
@@ -69,15 +83,27 @@ export default function Usuarios() {
                       </span>
                     </td>
                     <td>
-                      <select
-                        value={u.role}
-                        disabled={u.uid === profile?.uid}
-                        onChange={(e) => changeRole(u, e.target.value as Role)}
-                        style={{ fontSize: 11, padding: '4px 6px' }}
-                      >
-                        <option value="gestor">Gestor</option>
-                        <option value="rh">RH</option>
-                      </select>
+                      <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                        <select
+                          value={u.role}
+                          disabled={u.uid === profile?.uid}
+                          onChange={(e) => changeRole(u, e.target.value as Role)}
+                          style={{ fontSize: 11, padding: '4px 6px' }}
+                        >
+                          <option value="gestor">Gestor</option>
+                          <option value="rh">RH</option>
+                        </select>
+                        <button
+                          type="button"
+                          className="tbtn"
+                          disabled={u.uid === profile?.uid}
+                          onClick={() => excluirAcesso(u)}
+                          title={u.uid === profile?.uid ? 'Você não pode remover seu próprio acesso' : 'Remover acesso'}
+                          style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                        >
+                          ✕
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

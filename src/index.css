@@ -383,6 +383,11 @@ td .tds { font-size: 10px; color: var(--mut); margin-top: 2px; }
 .auth-form { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 16px; }
 .auth-form h1 { font-size: 28px; letter-spacing: -0.03em; }
 .auth-form p { color: var(--mut); font-size: 13px; margin: 0; }
+.auth-divider { display: flex; align-items: center; gap: 10px; color: var(--mut); font-size: 10px; text-transform: uppercase; letter-spacing: 2px; margin: 2px 0; }
+.auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--b1); }
+.btn-google { display: flex; align-items: center; justify-content: center; gap: 10px; background: #fff; border: 1px solid var(--b2); color: var(--txt); font-weight: 600; }
+.btn-google:hover:not(:disabled) { background: var(--n50); border-color: var(--n300); }
+.btn-google svg { flex-shrink: 0; }
 @media (max-width: 900px) { .auth-shell { grid-template-columns: 1fr; } .auth-hero { display: none; } }
 
 /* UTILS */
