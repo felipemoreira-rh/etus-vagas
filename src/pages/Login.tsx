@@ -1,9 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { useAuth } from '../contexts/AuthContext'
-import { auth, db } from '../firebase'
+import { auth } from '../firebase'
 import { allowedDomainsHuman, isEmailAllowed } from '../utils/authAllowlist'
 
 export default function Login() {
@@ -35,29 +34,22 @@ export default function Login() {
     setGoogleLoading(true)
     try {
       const provider = new GoogleAuthProvider()
-      // Recomenda seleção de conta toda vez — evita login automático com conta errada.
+      // Força o seletor de conta — evita login automático com conta errada.
       provider.setCustomParameters({ prompt: 'select_account' })
       const cred = await signInWithPopup(auth, provider)
       const email = cred.user.email ?? ''
       if (!isEmailAllowed(email)) {
+        // Fora da allowlist — desloga e mostra erro. (Continua existindo um
+        // registro órfão no Firebase Auth; limpeza automática exigiria
+        // Cloud Function com Admin SDK — está documentado como follow-up.)
         await signOut(auth)
         setError(`Somente e-mails dos domínios ${allowedDomainsHuman()} podem entrar com Google.`)
         return
       }
-      // Se for primeiro login Google dessa pessoa, cria o doc users/{uid}
-      // como Gestor por padrão — um RH promove depois em Usuários se for o caso.
-      const uref = doc(db, 'users', cred.user.uid)
-      const snap = await getDoc(uref)
-      if (!snap.exists()) {
-        await setDoc(uref, {
-          email,
-          name: cred.user.displayName ?? email,
-          role: 'gestor',
-          empresa: '',
-          area: '',
-          createdAt: serverTimestamp(),
-        })
-      }
+      // Criação do doc users/{uid} no primeiro login é feita pelo AuthContext
+      // dentro do onAuthStateChanged — evita race entre o listener ver
+      // profile=null e o handler aqui gravar o doc. Aqui só navegamos; o
+      // RoleRedirect aguarda `loading=false` antes de decidir a rota.
       navigate('/')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Falha ao entrar com Google.'
