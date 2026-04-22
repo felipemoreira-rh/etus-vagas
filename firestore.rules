@@ -28,9 +28,19 @@ service cloud.firestore {
       return isSignedIn() && myRole() == 'gestor';
     }
 
+    function isBlocked(uid) {
+      return exists(/databases/$(database)/documents/blocked_users/$(uid));
+    }
+
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == uid;
+      // Cria o próprio doc só se NÃO estiver na lista de bloqueados. Isso
+      // fecha o bypass onde um usuário cujo acesso foi revogado (doc users
+      // deletado) podia abrir o devtools e dar `setDoc('users/{meu_uid}',
+      // { role: 'rh', ... })` pra reconquistar acesso — a checagem
+      // `blocked_users` no AuthContext é só UX; o enforce real é aqui.
+      allow create: if isSignedIn() && request.auth.uid == uid &&
+                       !isBlocked(uid);
       allow update: if isSignedIn() && (
         (request.auth.uid == uid &&
           request.resource.data.role == resource.data.role) ||
