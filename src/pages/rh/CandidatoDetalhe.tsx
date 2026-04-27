@@ -47,11 +47,15 @@ export default function CandidatoDetalhe() {
     e.preventDefault()
     if (!c || !profile) return
     setSaving(true)
+    setErr(null)
     try {
+      // Firestore rejeita campos com valor `undefined`, então só incluímos
+      // `nota` se tiver conteúdo real.
       const mov: CandidatoMovimentacao = {
         at: Timestamp.now(),
         byUid: profile.uid, byName: profile.name,
-        fromFase: c.fase, toFase: novaFase, nota: nota || undefined,
+        fromFase: c.fase, toFase: novaFase,
+        ...(nota.trim() ? { nota: nota.trim() } : {}),
       }
       await updateDoc(doc(db, 'candidatos', c.id), {
         fase: novaFase,
@@ -60,6 +64,8 @@ export default function CandidatoDetalhe() {
         historico: arrayUnion(mov),
       })
       setNota('')
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Erro ao salvar.')
     } finally { setSaving(false) }
   }
 

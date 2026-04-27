@@ -44,13 +44,15 @@ export default function VagaDetalheRh() {
     if (!vaga || !profile) return
     setSaving(true)
     try {
+      // Firestore rejeita campos com valor `undefined`, então só incluímos
+      // `nota` se tiver conteúdo real.
       const mov: VagaMovimentacao = {
         at: Timestamp.now(),
         byUid: profile.uid,
         byName: profile.name,
         fromStatus: vaga.status,
         toStatus: novoStatus,
-        nota: nota || undefined,
+        ...(nota.trim() ? { nota: nota.trim() } : {}),
       }
       await updateDoc(doc(db, 'vagas', vaga.id), {
         status: novoStatus,

@@ -45,10 +45,13 @@ export default function GestorCandidatoDetalhe() {
     if (!c || !profile) return
     setSaving(true)
     try {
+      // Firestore rejeita campos com valor `undefined`, então só incluímos
+      // `nota` se tiver conteúdo real.
       const mov: CandidatoMovimentacao = {
         at: Timestamp.now(),
         byUid: profile.uid, byName: profile.name,
-        fromFase: c.fase, toFase: novaFase, nota: nota || undefined,
+        fromFase: c.fase, toFase: novaFase,
+        ...(nota.trim() ? { nota: nota.trim() } : {}),
       }
       await updateDoc(doc(db, 'candidatos', c.id), {
         fase: novaFase,
