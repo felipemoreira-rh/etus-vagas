@@ -10,8 +10,15 @@ interface NavItem {
 const rhNav: NavItem[] = [
   { to: '/rh', label: 'Dashboard', icon: '▦' },
   { to: '/rh/vagas', label: 'Todas as vagas', icon: '◇' },
+  { to: '/rh/candidatos', label: 'Candidatos', icon: '☺' },
+  { to: '/rh/onboarding', label: 'Onboarding', icon: '✓' },
   { to: '/rh/usuarios', label: 'Usuários', icon: '◉' },
 ]
+
+const dpNav: NavItem[] = [
+  { to: '/dp', label: 'Dashboard DP', icon: '▦' },
+]
+
 const gestorNav: NavItem[] = [
   { to: '/gestor', label: 'Minhas vagas', icon: '◇' },
   { to: '/gestor/nova', label: 'Abrir nova vaga', icon: '+' },
@@ -20,7 +27,7 @@ const gestorNav: NavItem[] = [
 export default function Sidebar() {
   const { profile, logout } = useAuth()
   const navigate = useNavigate()
-  const nav = profile?.role === 'rh' ? rhNav : gestorNav
+  const nav = profile?.role === 'rh' ? rhNav : profile?.role === 'dp' ? dpNav : gestorNav
 
   async function handleLogout() {
     await logout()
@@ -35,7 +42,7 @@ export default function Sidebar() {
       </div>
 
       <div className="section-label">
-        {profile?.role === 'rh' ? 'RH — Time de Gente' : 'Gestor'}
+        {profile?.role === 'rh' ? 'RH — Time de Gente' : profile?.role === 'dp' ? 'DP — Departamento Pessoal' : 'Gestor'}
       </div>
 
       {nav.map((item) => (

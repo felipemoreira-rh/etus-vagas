@@ -3,14 +3,7 @@ import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { useNavigate } from 'react-router-dom'
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
-import type {
-  Formacao,
-  Jornada,
-  MotivoAbertura,
-  Nivel,
-  Regime,
-  TempoExperiencia,
-} from '../../types'
+import { EMPRESAS, type Regime, type Formacao, type Jornada, type MotivoAbertura, type Nivel, type TempoExperiencia } from '../../types'
 
 const NIVEIS: { v: Nivel; l: string }[] = [
   { v: 'estagiario', l: 'Estagiário' },
@@ -59,7 +52,8 @@ export default function NovaVaga() {
   const { user, profile } = useAuth()
   const navigate = useNavigate()
 
-  const [empresa, setEmpresa] = useState(profile?.empresa ?? '')
+  // Empresas pode ser uma string única (para compatibilidade) ou array de empresas
+  const [empresas, setEmpresas] = useState<string[]>(profile?.empresa ? [profile.empresa] : [])
   const [cargo, setCargo] = useState('')
   const [time, setTime] = useState(profile?.area ?? '')
   const [motivo, setMotivo] = useState<MotivoAbertura>('aumento')
@@ -82,9 +76,22 @@ export default function NovaVaga() {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
+  function toggleEmpresa(empresa: string) {
+    setEmpresas(prev => 
+      prev.includes(empresa) 
+        ? prev.filter(e => e !== empresa)
+        : [...prev, empresa]
+    )
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!user || !profile) return
+    if (empresas.length === 0) {
+      setError('Selecione pelo menos uma empresa.')
+      setSaving(false)
+      return
+    }
     setError(null)
     setSaving(true)
     try {
@@ -92,7 +99,7 @@ export default function NovaVaga() {
         status: 'aberta',
         cargo,
         time,
-        empresa,
+        empresa: empresas.join(', '), // Salva como string separada por vírgulas
         motivo,
         substituidoNome: motivo === 'substituicao' ? substituidoNome : '',
         justificativaAumento: motivo === 'aumento' ? justificativaAumento : '',
@@ -157,9 +164,33 @@ export default function NovaVaga() {
         <div className="card">
           <h3>Identificação</h3>
           <div className="form-grid">
-            <div className="field">
+            <div className="field full">
               <label>Empresa do Grupo *</label>
-              <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} required />
+              <div className="checkbox-group" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: 8 }}>
+                {EMPRESAS.map((emp) => (
+                  <label
+                    key={emp}
+                    className={'checkbox-option' + (empresas.includes(emp) ? ' selected' : '')}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '8px 12px',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      background: empresas.includes(emp) ? 'var(--green-50)' : 'transparent',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={empresas.includes(emp)}
+                      onChange={() => toggleEmpresa(emp)}
+                      style={{ marginRight: 6 }}
+                    />
+                    {emp}
+                  </label>
+                ))}
+              </div>
             </div>
             <div className="field">
               <label>Nome do cargo (para divulgação) *</label>

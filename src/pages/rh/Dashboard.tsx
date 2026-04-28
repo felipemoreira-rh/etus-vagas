@@ -65,11 +65,28 @@ export default function Dashboard() {
     const porTime = new Map<string, number>()
     const porRegime = new Map<string, number>()
 
+    // Para calcular SLA
+    const statusTimestamps: Record<VagaStatus, number[]> = {
+      aberta: [],
+      triagem: [],
+      entrevistas: [],
+      proposta: [],
+      contratada: [],
+      pausada: [],
+      cancelada: [],
+    }
+
     vagas.forEach((v) => {
       porStatus[v.status]++
       porEmpresa.set(v.empresa || '—', (porEmpresa.get(v.empresa || '—') ?? 0) + 1)
       porTime.set(v.time || '—', (porTime.get(v.time || '—') ?? 0) + 1)
       porRegime.set(v.regime, (porRegime.get(v.regime) ?? 0) + 1)
+      
+      // Calcular tempo no status atual
+      if (v.updatedAt && typeof v.updatedAt === 'object' && 'toDate' in v.updatedAt) {
+        const timestamp = (v.updatedAt as { toDate: () => Date }).toDate().getTime()
+        statusTimestamps[v.status].push(timestamp)
+      }
     })
 
     const emAndamento = vagas.filter(
@@ -78,10 +95,36 @@ export default function Dashboard() {
 
     const agora = Date.now()
     const trinta = 1000 * 60 * 60 * 24 * 30
+    const sete = 1000 * 60 * 60 * 24 * 7
+    
     const abertasUltimoMes = vagas.filter((v) => {
       const ts = v.createdAt
       if (!ts || typeof ts !== 'object' || !('toDate' in ts)) return false
       return (ts as { toDate: () => Date }).toDate().getTime() > agora - trinta
+    }).length
+
+    // Calcular SLA médio (tempo médio desde atualização)
+    const slaMedioDias = (() => {
+      let totalDias = 0
+      let totalVagas = 0
+      vagas.forEach((v) => {
+        if (v.updatedAt && typeof v.updatedAt === 'object' && 'toDate' in v.updatedAt && !['contratada', 'cancelada'].includes(v.status)) {
+          const updated = (v.updatedAt as { toDate: () => Date }).toDate().getTime()
+          const dias = (agora - updated) / (1000 * 60 * 60 * 24)
+          totalDias += dias
+          totalVagas++
+        }
+      })
+      return totalVagas > 0 ? Math.round(totalDias / totalVagas) : 0
+    })()
+
+    // Vagas com mais de 7 dias sem atualização (atrasadas)
+    const vagasAtrasadas = vagas.filter((v) => {
+      if (['contratada', 'cancelada'].includes(v.status)) return false
+      const ts = v.updatedAt
+      if (!ts || typeof ts !== 'object' || !('toDate' in ts)) return false
+      const updated = (ts as { toDate: () => Date }).toDate().getTime()
+      return agora - updated > sete
     }).length
 
     return {
@@ -90,6 +133,8 @@ export default function Dashboard() {
       contratadas: porStatus.contratada,
       canceladas: porStatus.cancelada,
       abertasUltimoMes,
+      slaMedioDias,
+      vagasAtrasadas,
       porStatus,
       porEmpresa: Array.from(porEmpresa, ([name, value]) => ({ name, value })).sort(
         (a, b) => b.value - a.value,
@@ -126,7 +171,8 @@ export default function Dashboard() {
         <KpiCard label="Em andamento" value={stats.emAndamento} />
         <KpiCard label="Contratadas" value={stats.contratadas} />
         <KpiCard label="Abertas nos últimos 30d" value={stats.abertasUltimoMes} />
-        <KpiCard label="Canceladas" value={stats.canceladas} />
+        <KpiCard label="SLA médio (dias)" value={stats.slaMedioDias} />
+        <KpiCard label="Vagas aguardando >7d" value={stats.vagasAtrasadas} />
       </div>
 
       <div className="two-col">
