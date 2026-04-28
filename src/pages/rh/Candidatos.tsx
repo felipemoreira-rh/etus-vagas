@@ -22,6 +22,8 @@ function faseClass(f: CandidatoFase) {
   return 'info'
 }
 
+type ViewMode = 'lista' | 'grupo'
+
 export default function Candidatos() {
   const { profile } = useAuth()
   const [candidatos, setCandidatos] = useState<Candidato[]>([])
@@ -30,6 +32,7 @@ export default function Candidatos() {
   const [search, setSearch] = useState('')
   const [faseFilter, setFaseFilter] = useState<CandidatoFase | 'todas'>('todas')
   const [vagaFilter, setVagaFilter] = useState<string>('todas')
+  const [view, setView] = useState<ViewMode>('grupo')
   const [openModal, setOpenModal] = useState(false)
 
   useEffect(() => {
@@ -57,6 +60,39 @@ export default function Candidatos() {
     })
   }, [candidatos, faseFilter, vagaFilter, search])
 
+  // Agrupa candidatos por vaga (mantendo a ordem original do filtered).
+  // Vagas sem candidatos no filtro também aparecem (quando o filtro de vaga é
+  // "todas") para deixar visível "vaga aberta sem candidatos ainda".
+  const grupos = useMemo(() => {
+    const byVaga = new Map<string, Candidato[]>()
+    for (const c of filtered) {
+      const arr = byVaga.get(c.vagaId) ?? []
+      arr.push(c)
+      byVaga.set(c.vagaId, arr)
+    }
+    const vagasUsadas = vagas.filter(v => byVaga.has(v.id) || vagaFilter === 'todas')
+    const lista = vagasUsadas.map(v => ({
+      vaga: v,
+      candidatos: byVaga.get(v.id) ?? [],
+    }))
+    lista.sort((a, b) => {
+      const ativosA = a.candidatos.filter(c => !['aprovado','reprovado','desistente'].includes(c.fase)).length
+      const ativosB = b.candidatos.filter(c => !['aprovado','reprovado','desistente'].includes(c.fase)).length
+      if (ativosA !== ativosB) return ativosB - ativosA
+      return a.vaga.cargo.localeCompare(b.vaga.cargo)
+    })
+    // Candidatos órfãos (vagaId que não está mais em vagas — vaga excluída).
+    const idsConhecidos = new Set(vagas.map(v => v.id))
+    const orfaos = filtered.filter(c => !idsConhecidos.has(c.vagaId))
+    if (orfaos.length > 0) {
+      lista.push({
+        vaga: { id: '__orfaos__', cargo: 'Sem vaga vinculada', empresa: '', time: '' } as Vaga,
+        candidatos: orfaos,
+      })
+    }
+    return lista
+  }, [filtered, vagas, vagaFilter])
+
   const porFase = useMemo(() => {
     const map = new Map<CandidatoFase, number>()
     candidatos.forEach(c => map.set(c.fase, (map.get(c.fase) ?? 0) + 1))
@@ -69,12 +105,6 @@ export default function Candidatos() {
     const txt = `Excluir o candidato "${c.nome}"?\n\nEssa ação é permanente. O histórico e os anexos vinculados (CV + relatórios) serão removidos.`
     if (!confirm(txt)) return
     try {
-      // Remove primeiro os anexos do Storage pra não deixar lixo acumulando
-      // custo depois que o doc some. removeFile ignora 'object-not-found',
-      // então um arquivo já ausente não quebra a exclusão. Usamos
-      // Promise.allSettled pra garantir que um erro isolado (ex.: permissão
-      // pontual de um relatório) não impeça a exclusão do doc principal —
-      // melhor ficar um anexo órfão do que um candidato "zumbi" no Firestore.
       const paths: string[] = []
       if (c.curriculumPath) paths.push(c.curriculumPath)
       for (const r of c.relatorios ?? []) {
@@ -130,6 +160,10 @@ export default function Candidatos() {
               <option value="todas">Todas as vagas</option>
               {vagas.map(v => <option key={v.id} value={v.id}>{v.cargo} · {v.time}</option>)}
             </select>
+            <select value={view} onChange={(e) => setView(e.target.value as ViewMode)}>
+              <option value="grupo">Agrupar por vaga</option>
+              <option value="lista">Lista única</option>
+            </select>
           </div>
 
           {loading ? (
@@ -140,57 +174,13 @@ export default function Candidatos() {
               <div className="empty-ttl">Nenhum candidato</div>
               <div className="empty-sub">Cadastre candidatos para começar o pipeline.</div>
             </div>
+          ) : view === 'lista' ? (
+            <CandidatosTable candidatos={filtered} onExcluir={excluir} />
           ) : (
-            <div className="panel-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Candidato</th>
-                    <th>Vaga</th>
-                    <th>Fase</th>
-                    <th>Origem</th>
-                    <th>Score</th>
-                    <th style={{ width: 140 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map(c => (
-                    <tr key={c.id}>
-                      <td>
-                        <div className="tdm">{c.nome}</div>
-                        <div className="tds">{c.email || '—'}</div>
-                      </td>
-                      <td style={{ fontSize: 12 }}>{c.vagaCargo}</td>
-                      <td><span className={`bdg ${faseClass(c.fase)}`}>{CANDIDATO_FASE_LABEL[c.fase]}</span></td>
-                      <td style={{ fontSize: 12, color: 'var(--mut)' }}>
-                        {c.origem === 'outro' && c.origemOutro ? c.origemOutro : CANDIDATO_ORIGEM_LABEL[c.origem]}
-                      </td>
-                      <td>
-                        {typeof c.score === 'number' ? (
-                          <span>
-                            <span className="scbar"><span className="scfill" style={{ width: `${c.score}%` }} /></span>
-                            <span style={{ fontSize: 11, fontWeight: 700 }}>{c.score}</span>
-                          </span>
-                        ) : <span className="muted">—</span>}
-                      </td>
-                      <td>
-                        <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                          <Link to={`/rh/candidatos/${c.id}`} className="tbtn" style={{ height: 26 }}>Abrir →</Link>
-                          <button
-                            type="button"
-                            className="tbtn"
-                            onClick={() => excluir(c)}
-                            title="Excluir candidato"
-                            style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="row-gap-14">
+              {grupos.map(g => (
+                <CandidatosGrupo key={g.vaga.id} vaga={g.vaga} candidatos={g.candidatos} onExcluir={excluir} />
+              ))}
             </div>
           )}
         </div>
@@ -208,18 +198,140 @@ export default function Candidatos() {
   )
 }
 
-function NovoCandidatoModal({ vagas, profileName, profileUid, onClose }: {
+function CandidatosGrupo({ vaga, candidatos, onExcluir }: {
+  vaga: Vaga
+  candidatos: Candidato[]
+  onExcluir: (c: Candidato) => void
+}) {
+  const [open, setOpen] = useState(true)
+  const ativos = candidatos.filter(c => !['aprovado','reprovado','desistente'].includes(c.fase)).length
+  return (
+    <div className="panel" style={{ padding: 0 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        style={{
+          display: 'flex',
+          width: '100%',
+          alignItems: 'center',
+          gap: 12,
+          padding: '12px 14px',
+          background: 'transparent',
+          border: 'none',
+          borderBottom: open ? '1px solid var(--b1)' : 'none',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: 11, color: 'var(--mut)' }}>{open ? '▾' : '▸'}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>{vaga.cargo}</div>
+          <div style={{ fontSize: 11, color: 'var(--mut)' }}>
+            {vaga.empresa ? `${vaga.empresa} · ` : ''}{vaga.time || 'sem time'}
+            {vaga.id !== '__orfaos__' && ` · `}
+            {vaga.id !== '__orfaos__' && (
+              <Link to={`/rh/vagas/${vaga.id}`} onClick={(e) => e.stopPropagation()} style={{ color: 'var(--g600)' }}>
+                abrir vaga
+              </Link>
+            )}
+          </div>
+        </div>
+        <span className="bdg info">{candidatos.length} {candidatos.length === 1 ? 'candidato' : 'candidatos'}</span>
+        <span className="bdg ok">{ativos} ativos</span>
+      </button>
+      {open && (
+        candidatos.length === 0 ? (
+          <div className="empty-sub" style={{ padding: 14 }}>Nenhum candidato vinculado a essa vaga ainda.</div>
+        ) : (
+          <CandidatosTable candidatos={candidatos} onExcluir={onExcluir} compact />
+        )
+      )}
+    </div>
+  )
+}
+
+function CandidatosTable({ candidatos, onExcluir, compact }: {
+  candidatos: Candidato[]
+  onExcluir: (c: Candidato) => void
+  compact?: boolean
+}) {
+  return (
+    <div className={compact ? '' : 'panel-scroll'}>
+      <table>
+        <thead>
+          <tr>
+            <th>Candidato</th>
+            {!compact && <th>Vaga</th>}
+            <th>Fase</th>
+            <th>Origem</th>
+            <th>Score</th>
+            <th style={{ width: 140 }}></th>
+          </tr>
+        </thead>
+        <tbody>
+          {candidatos.map(c => (
+            <tr key={c.id}>
+              <td>
+                <div className="tdm">{c.nome}</div>
+                <div className="tds">{c.email || '—'}</div>
+              </td>
+              {!compact && <td style={{ fontSize: 12 }}>{c.vagaCargo}</td>}
+              <td><span className={`bdg ${faseClass(c.fase)}`}>{CANDIDATO_FASE_LABEL[c.fase]}</span></td>
+              <td style={{ fontSize: 12, color: 'var(--mut)' }}>
+                {c.origem === 'outro' && c.origemOutro
+                  ? c.origemOutro
+                  : c.origem === 'indicacao' && c.indicadoPorNome
+                    ? `Indicação: ${c.indicadoPorNome}`
+                    : CANDIDATO_ORIGEM_LABEL[c.origem]}
+              </td>
+              <td>
+                {typeof c.score === 'number' ? (
+                  <span>
+                    <span className="scbar"><span className="scfill" style={{ width: `${c.score}%` }} /></span>
+                    <span style={{ fontSize: 11, fontWeight: 700 }}>{c.score}</span>
+                  </span>
+                ) : <span className="muted">—</span>}
+              </td>
+              <td>
+                <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                  <Link to={`/rh/candidatos/${c.id}`} className="tbtn" style={{ height: 26 }}>Abrir →</Link>
+                  <button
+                    type="button"
+                    className="tbtn"
+                    onClick={() => onExcluir(c)}
+                    title="Excluir candidato"
+                    style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export function NovoCandidatoModal({ vagas, profileName, profileUid, onClose, vagaIdFixo, onCreated }: {
   vagas: Vaga[]
   profileName: string
   profileUid: string
   onClose: () => void
+  // Quando o modal é aberto a partir do detalhe de uma vaga, fixamos a vaga
+  // pra evitar que o RH erre e cadastre o candidato em outra vaga.
+  vagaIdFixo?: string
+  onCreated?: (id: string) => void
 }) {
   const [nome, setNome] = useState('')
   const [email, setEmail] = useState('')
   const [telefone, setTelefone] = useState('')
   const [linkedin, setLinkedin] = useState('')
-  const [vagaId, setVagaId] = useState(vagas[0]?.id || '')
+  const [vagaId, setVagaId] = useState(vagaIdFixo || vagas[0]?.id || '')
   const [origem, setOrigem] = useState<CandidatoOrigem>('linkedin')
+  const [origemOutro, setOrigemOutro] = useState('')
+  const [indicadoPorNome, setIndicadoPorNome] = useState('')
   const [score, setScore] = useState<number | ''>('')
   const [observacoes, setObservacoes] = useState('')
   const [saving, setSaving] = useState(false)
@@ -232,16 +344,21 @@ function NovoCandidatoModal({ vagas, profileName, profileUid, onClose }: {
     try {
       const vaga = vagas.find(v => v.id === vagaId)
       if (!vaga) throw new Error('Selecione uma vaga.')
+      if (origem === 'indicacao' && !indicadoPorNome.trim()) {
+        throw new Error('Informe o nome de quem indicou.')
+      }
       const mov: CandidatoMovimentacao = {
         at: Timestamp.now(), byUid: profileUid, byName: profileName,
         toFase: 'triagem', nota: 'Candidato cadastrado.',
       }
-      await addDoc(collection(db, 'candidatos'), {
+      const ref = await addDoc(collection(db, 'candidatos'), {
         nome, email, telefone, linkedin,
         vagaId, vagaCargo: vaga.cargo,
         vagaGestorUid: vaga.gestorUid,
         fase: 'triagem' as CandidatoFase,
         origem,
+        ...(origem === 'outro' ? { origemOutro: origemOutro.trim() } : {}),
+        ...(origem === 'indicacao' ? { indicadoPorNome: indicadoPorNome.trim() } : {}),
         score: typeof score === 'number' ? score : null,
         observacoes,
         relatorios: [],
@@ -250,6 +367,7 @@ function NovoCandidatoModal({ vagas, profileName, profileUid, onClose }: {
         updatedAt: serverTimestamp(),
         historico: [mov],
       })
+      onCreated?.(ref.id)
       onClose()
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Erro ao salvar.')
@@ -258,11 +376,15 @@ function NovoCandidatoModal({ vagas, profileName, profileUid, onClose }: {
     }
   }
 
+  const vagaFixaInfo = vagaIdFixo ? vagas.find(v => v.id === vagaIdFixo) : null
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Novo candidato</h2>
-        <p>Cadastre um candidato em uma vaga aberta.</p>
+        <p>{vagaFixaInfo
+          ? `Cadastrando em: ${vagaFixaInfo.cargo} · ${vagaFixaInfo.empresa}`
+          : 'Cadastre um candidato em uma vaga aberta.'}</p>
         <form onSubmit={handleSubmit} className="row-gap-14">
           {err && <div className="error-text">{err}</div>}
           <div className="field">
@@ -274,12 +396,14 @@ function NovoCandidatoModal({ vagas, profileName, profileUid, onClose }: {
             <div className="field"><label>Telefone</label><input value={telefone} onChange={(e) => setTelefone(e.target.value)} /></div>
             <div className="field full"><label>LinkedIn</label><input value={linkedin} onChange={(e) => setLinkedin(e.target.value)} /></div>
           </div>
-          <div className="field">
-            <label>Vaga *</label>
-            <select value={vagaId} onChange={(e) => setVagaId(e.target.value)} required>
-              {vagas.map(v => <option key={v.id} value={v.id}>{v.cargo} · {v.time} · {v.empresa}</option>)}
-            </select>
-          </div>
+          {!vagaIdFixo && (
+            <div className="field">
+              <label>Vaga *</label>
+              <select value={vagaId} onChange={(e) => setVagaId(e.target.value)} required>
+                {vagas.map(v => <option key={v.id} value={v.id}>{v.cargo} · {v.time} · {v.empresa}</option>)}
+              </select>
+            </div>
+          )}
           <div className="form-grid">
             <div className="field">
               <label>Origem</label>
@@ -297,6 +421,26 @@ function NovoCandidatoModal({ vagas, profileName, profileUid, onClose }: {
               <input type="number" min={0} max={100} value={score} onChange={(e) => setScore(e.target.value === '' ? '' : Number(e.target.value))} />
             </div>
           </div>
+          {origem === 'indicacao' && (
+            <div className="field">
+              <label>Nome de quem indicou *</label>
+              <input
+                value={indicadoPorNome}
+                onChange={(e) => setIndicadoPorNome(e.target.value)}
+                placeholder="Ex.: Maria Silva"
+                required
+              />
+              <small style={{ fontSize: 11, color: 'var(--mut)', marginTop: 4, display: 'block' }}>
+                Quando o candidato for aprovado, o sistema inicia um countdown de 90 dias para liberar o bônus de indicação.
+              </small>
+            </div>
+          )}
+          {origem === 'outro' && (
+            <div className="field">
+              <label>Especifique a origem</label>
+              <input value={origemOutro} onChange={(e) => setOrigemOutro(e.target.value)} />
+            </div>
+          )}
           <div className="field"><label>Observações</label><textarea value={observacoes} onChange={(e) => setObservacoes(e.target.value)} /></div>
           <div className="hstack" style={{ justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>

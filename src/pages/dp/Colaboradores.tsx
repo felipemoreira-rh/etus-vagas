@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, updateDoc } from 'firebase/firestore'
+import {
+  addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, Timestamp, updateDoc,
+} from 'firebase/firestore'
 import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
 import type { Colaborador, RegimeTrabalho } from '../../types'
-import { REGIME_TRABALHO_LABEL } from '../../types'
+import { EMPRESA_OPTIONS, REGIME_TRABALHO_LABEL } from '../../types'
 
 type ColaboradorStatus = Colaborador['status']
 
@@ -21,6 +23,18 @@ function toDateInput(ts?: { toDate: () => Date } | null): string {
     const dd = String(d.getDate()).padStart(2, '0')
     return `${yyyy}-${mm}-${dd}`
   } catch { return '' }
+}
+
+// Dias até completar 90 desde a data de admissão. Negativo = passou.
+// null = sem data.
+function diasParaBonusIndicacao(adm?: Timestamp | null) {
+  if (!adm) return null
+  try {
+    const limite = adm.toDate()
+    limite.setDate(limite.getDate() + 90)
+    const hoje = new Date()
+    return Math.ceil((limite.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24))
+  } catch { return null }
 }
 
 export default function Colaboradores() {
@@ -52,6 +66,22 @@ export default function Colaboradores() {
     })
   }, [items, search, statusF])
 
+  // Card de bônus de indicação: lista colaboradores que vieram via indicação
+  // e ainda têm countdown de 90d em aberto (ou já completaram).
+  const indicacoes = useMemo(() => {
+    return items
+      .filter(c => c.status === 'ativo' && c.indicadoPorNome)
+      .map(c => ({
+        c,
+        diasRestantes: diasParaBonusIndicacao(c.dataAdmissao),
+      }))
+      .sort((a, b) => {
+        const da = a.diasRestantes ?? 9999
+        const db = b.diasRestantes ?? 9999
+        return da - db
+      })
+  }, [items])
+
   async function excluir(c: Colaborador) {
     if (!confirm(`Excluir o colaborador "${c.nome}"?\n\nEssa ação é permanente.`)) return
     try {
@@ -69,6 +99,50 @@ export default function Colaboradores() {
         actions={<button className="tbtn pri" onClick={() => setOpenModal(true)}>＋ Novo colaborador</button>}
       />
       <div className="content">
+        {indicacoes.length > 0 && (
+          <div className="panel" style={{ borderLeft: '4px solid var(--g600)' }}>
+            <div className="ph">
+              <div className="pt">
+                <span className="pdot" style={{ background: 'var(--g600)' }} />
+                Bônus de indicação · countdown 90 dias
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--mut)' }}>
+                Bônus liberado quando o indicado completa 90d desde a admissão.
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Indicado</th>
+                  <th>Indicado por</th>
+                  <th>Admissão</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {indicacoes.map(({ c, diasRestantes }) => {
+                  const completou = diasRestantes !== null && diasRestantes <= 0
+                  const cor = completou ? 'var(--ok)' : diasRestantes != null && diasRestantes <= 30 ? 'var(--warn)' : 'var(--mut)'
+                  return (
+                    <tr key={c.id}>
+                      <td><div className="tdm">{c.nome}</div><div className="tds">{c.cargo} · {c.empresa}</div></td>
+                      <td style={{ fontSize: 12 }}>{c.indicadoPorNome}</td>
+                      <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(c.dataAdmissao)}</td>
+                      <td style={{ fontSize: 12, fontWeight: 700, color: cor }}>
+                        {diasRestantes === null
+                          ? 'Sem data de admissão'
+                          : completou
+                            ? '✓ Bônus liberado'
+                            : `${diasRestantes}d para liberar`}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <div className="panel">
           <div className="filter-bar">
             <div className="swrap">
@@ -110,7 +184,15 @@ export default function Colaboradores() {
                 <tbody>
                   {filtered.map(c => (
                     <tr key={c.id}>
-                      <td><div className="tdm">{c.nome}</div><div className="tds">{c.email || '—'}</div></td>
+                      <td>
+                        <div className="tdm">{c.nome}</div>
+                        <div className="tds">{c.email || '—'}</div>
+                        {c.indicadoPorNome && (
+                          <div style={{ fontSize: 10, color: 'var(--g600)', marginTop: 2 }}>
+                            Indicado por {c.indicadoPorNome}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ fontSize: 12 }}>{c.cargo}</td>
                       <td style={{ fontSize: 12, color: 'var(--mut)' }}>{c.area}</td>
                       <td style={{ fontSize: 12, color: 'var(--mut)' }}>{c.empresa}</td>
@@ -175,32 +257,38 @@ function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador,
   const [dataAdmissao, setDataAdmissao] = useState(toDateInput(colaborador?.dataAdmissao))
   const [salario, setSalario] = useState<number | ''>(typeof colaborador?.salario === 'number' ? colaborador.salario : '')
   const [status, setStatus] = useState<ColaboradorStatus>(colaborador?.status ?? 'ativo')
+  const [indicadoPorNome, setIndicadoPorNome] = useState(colaborador?.indicadoPorNome ?? '')
   const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setSaving(true)
+    setErr(null)
     try {
+      const dataAdm = dataAdmissao ? Timestamp.fromDate(new Date(dataAdmissao + 'T00:00:00')) : null
+      const base = {
+        nome, email, cargo, area, empresa, regime,
+        dataAdmissao: dataAdm,
+        salario: typeof salario === 'number' ? salario : null,
+        ...(indicadoPorNome.trim() ? { indicadoPorNome: indicadoPorNome.trim() } : {}),
+        updatedAt: serverTimestamp(),
+      }
       if (isEdit && colaborador) {
         await updateDoc(doc(db, 'colaboradores', colaborador.id), {
-          nome, email, cargo, area, empresa, regime,
-          // Parse as local-time midnight (não UTC) pra evitar off-by-one em UTC-3.
-          dataAdmissao: dataAdmissao ? new Date(dataAdmissao + 'T00:00:00') : null,
-          salario: typeof salario === 'number' ? salario : null,
+          ...base,
           status,
-          updatedAt: serverTimestamp(),
         })
       } else {
         await addDoc(collection(db, 'colaboradores'), {
-          nome, email, cargo, area, empresa, regime,
-          dataAdmissao: dataAdmissao ? new Date(dataAdmissao + 'T00:00:00') : null,
-          salario: typeof salario === 'number' ? salario : null,
+          ...base,
           status: 'ativo',
           createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
         })
       }
       onClose()
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Erro ao salvar.')
     } finally { setSaving(false) }
   }
 
@@ -209,12 +297,22 @@ function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador,
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>{isEdit ? 'Editar colaborador' : 'Novo colaborador'}</h2>
         <form onSubmit={handleSubmit} className="row-gap-14">
+          {err && <div className="error-text">{err}</div>}
           <div className="form-grid">
             <div className="field"><label>Nome *</label><input value={nome} onChange={(e) => setNome(e.target.value)} required /></div>
             <div className="field"><label>E-mail</label><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></div>
             <div className="field"><label>Cargo *</label><input value={cargo} onChange={(e) => setCargo(e.target.value)} required /></div>
             <div className="field"><label>Área *</label><input value={area} onChange={(e) => setArea(e.target.value)} required /></div>
-            <div className="field"><label>Empresa *</label><input value={empresa} onChange={(e) => setEmpresa(e.target.value)} required /></div>
+            <div className="field">
+              <label>Empresa *</label>
+              <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} required>
+                <option value="">— selecione —</option>
+                {EMPRESA_OPTIONS.map(emp => <option key={emp} value={emp}>{emp}</option>)}
+                {empresa && !(EMPRESA_OPTIONS as readonly string[]).includes(empresa) && (
+                  <option value={empresa}>{empresa} (legado)</option>
+                )}
+              </select>
+            </div>
             <div className="field">
               <label>Regime *</label>
               <select value={regime} onChange={(e) => setRegime(e.target.value as RegimeTrabalho)}>
@@ -226,6 +324,13 @@ function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador,
             </div>
             <div className="field"><label>Data de admissão *</label><input type="date" value={dataAdmissao} onChange={(e) => setDataAdmissao(e.target.value)} required /></div>
             <div className="field"><label>Salário (R$)</label><input type="number" min={0} step={0.01} value={salario} onChange={(e) => setSalario(e.target.value === '' ? '' : Number(e.target.value))} /></div>
+            <div className="field full">
+              <label>Indicado por (opcional)</label>
+              <input value={indicadoPorNome} onChange={(e) => setIndicadoPorNome(e.target.value)} placeholder="Nome de quem indicou" />
+              <small style={{ fontSize: 11, color: 'var(--mut)' }}>
+                Se preenchido, o sistema mostra countdown de 90d para liberar bônus de indicação.
+              </small>
+            </div>
             {isEdit && (
               <div className="field">
                 <label>Status</label>

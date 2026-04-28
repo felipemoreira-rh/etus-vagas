@@ -13,12 +13,18 @@ import type {
   TempoExperiencia,
   VagaMovimentacao,
 } from '../../types'
+import { EMPRESA_OPTIONS } from '../../types'
 
 export default function NovaVaga() {
   const { profile } = useAuth()
   const navigate = useNavigate()
 
-  const [empresa, setEmpresa] = useState(profile?.empresa || '')
+  // Pre-fill com empresa do perfil só se ela estiver na lista oficial —
+  // senão o select abre vazio e o gestor é obrigado a escolher uma das 8.
+  const initialEmpresa = profile?.empresa && (EMPRESA_OPTIONS as readonly string[]).includes(profile.empresa)
+    ? profile.empresa
+    : ''
+  const [empresa, setEmpresa] = useState<string>(initialEmpresa)
   const [cargo, setCargo] = useState('')
   const [time, setTime] = useState(profile?.area || '')
   const [motivo, setMotivo] = useState<MotivoAbertura>('aumento')
@@ -105,7 +111,10 @@ export default function NovaVaga() {
             <div className="form-grid">
               <div className="field">
                 <label>Empresa do Grupo *</label>
-                <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} required placeholder="Ex.: ETUS" />
+                <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} required>
+                  <option value="">— selecione —</option>
+                  {EMPRESA_OPTIONS.map(emp => <option key={emp} value={emp}>{emp}</option>)}
+                </select>
               </div>
               <div className="field">
                 <label>Nome do cargo (para divulgação) *</label>

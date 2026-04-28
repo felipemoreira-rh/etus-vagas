@@ -8,6 +8,7 @@ import type {
   Formacao, Jornada, MotivoAbertura, Nivel, Regime,
   TempoExperiencia, UserProfile, VagaMovimentacao,
 } from '../../types'
+import { EMPRESA_OPTIONS } from '../../types'
 
 /**
  * Fluxo RH: pode abrir vaga diretamente em nome de um gestor (ou sem gestor vinculado).
@@ -105,7 +106,10 @@ export default function RhNovaVaga() {
             <div className="form-grid">
               <div className="field">
                 <label>Empresa *</label>
-                <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} required />
+                <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} required>
+                  <option value="">— selecione —</option>
+                  {EMPRESA_OPTIONS.map(emp => <option key={emp} value={emp}>{emp}</option>)}
+                </select>
               </div>
               <div className="field">
                 <label>Cargo (divulgação) *</label>

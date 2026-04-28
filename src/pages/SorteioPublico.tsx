@@ -231,6 +231,12 @@ function computeFase(s: Sorteio | null, now: number): Fase {
   if (!s) return 'antes'
   if (s.status === 'cancelado') return 'cancelado'
   if (s.status === 'sorteado') return 'encerrado'
+  // Se o RH fechou inscrições manualmente (status 'aguardando_sorteio') ou
+  // o sorteio ainda está em rascunho, não exibimos UI de inscrição mesmo que
+  // a janela de tempo permitiria — assim evitamos confusão e erros 'permission-denied'
+  // (a Firestore rule só aceita escrita em participantes quando status == 'inscricoes_abertas').
+  if (s.status === 'aguardando_sorteio') return 'aguardando'
+  if (s.status === 'rascunho') return 'antes'
   const nowTs = now
   const inicio = tsToMs(s.janelaSorteioInicio)
   const fim = tsToMs(s.janelaSorteioFim)

@@ -90,17 +90,45 @@ service cloud.firestore {
                         request.resource.data.vagaGestorUid == resource.data.vagaGestorUid);
     }
 
+    // Onboarding: RH cria/edita. Gestor pode ler os onboardings das vagas
+    // sob sua responsabilidade (vinculados via candidatoId/vagaId).
     match /onboarding/{id} {
-      allow read, write: if isRh();
+      allow read: if isRh() ||
+                     (isGestor() &&
+                      exists(/databases/$(database)/documents/vagas/$(resource.data.vagaId)) &&
+                      get(/databases/$(database)/documents/vagas/$(resource.data.vagaId)).data.gestorUid == request.auth.uid);
+      allow create, update, delete: if isRh();
     }
 
     // === Módulo DP — Departamento Pessoal ===
+    // Estagiários e colaboradores: RH cria/edita. Gestor lê seus próprios
+    // (gestorUid == auth.uid) pra acompanhar seu time.
     match /estagiarios/{id} {
-      allow read, write: if isRh();
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.gestorUid == request.auth.uid);
+      allow create, update, delete: if isRh();
     }
 
     match /colaboradores/{id} {
-      allow read, write: if isRh();
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.gestorUid == request.auth.uid);
+      allow create, update, delete: if isRh();
+    }
+
+    // Notificações: cada usuário só vê e marca como lida as próprias.
+    // RH cria notificações (em batch via app); gestor pode marcar a
+    // própria como lida mas não pode criar/apagar.
+    match /notificacoes/{id} {
+      allow read: if isSignedIn() &&
+                     resource.data.destinatarioUid == request.auth.uid;
+      allow create: if isRh();
+      // Update permitido só se for marcar `lida = true` ou se for RH.
+      // (Mantemos simples: qualquer destinatário pode atualizar a própria,
+      //  já que campos de auditoria não são sensíveis.)
+      allow update: if isRh() ||
+                       (isSignedIn() &&
+                        resource.data.destinatarioUid == request.auth.uid);
+      allow delete: if isRh();
     }
 
     // === Sorteios ===

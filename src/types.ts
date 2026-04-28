@@ -13,6 +13,20 @@ export interface UserProfile {
   createdAt?: Timestamp
 }
 
+// ═════════════════════════ EMPRESAS DO GRUPO ═════════════════════════
+// Lista fixa de empresas pra padronizar marcação em vagas, candidatos, etc.
+export const EMPRESA_OPTIONS = [
+  'ETUS',
+  'EVOLUTION',
+  'E3MEDIA',
+  'BHAZ',
+  'NONAME',
+  'E3J',
+  'PLUSDIN',
+  'ONTU',
+] as const
+export type Empresa = (typeof EMPRESA_OPTIONS)[number]
+
 // ═════════════════════════ MÓDULOS ═════════════════════════
 export type ModuleKey = 'rh' | 'dp'
 
@@ -234,6 +248,9 @@ export interface Candidato {
   score?: number // 0–100
   origem: CandidatoOrigem
   origemOutro?: string
+  // Quando origem === 'indicacao': nome de quem indicou (referrer).
+  indicadoPorNome?: string
+  indicadoPorUid?: string
 
   observacoes?: string
   curriculumUrl?: string
@@ -242,9 +259,80 @@ export interface Candidato {
   relatorios?: Anexo[]
   agendamentos?: AgendamentoEntrevista[]
 
+  // Preenchido quando o candidato é movido pra fase 'aprovado' (modal data prevista).
+  // Usado para: criar onboarding, calcular countdown de 90d para bônus de indicação,
+  // popular dataInicio do estagiário/colaborador ao concluir o onboarding.
+  dataPrevistaInicio?: Timestamp
+  dataAdmissao?: Timestamp
+
   createdAt: Timestamp
   updatedAt: Timestamp
   historico: CandidatoMovimentacao[]
+}
+
+// ═════════════════════════ ONBOARDING TIPOS ═════════════════════════
+// Cada tipo de contrato tem um checklist diferente. Mapeamos a partir do
+// regime da vaga, mas guardamos no Onboarding também pra que mudanças no
+// regime da vaga depois não quebrem o checklist em andamento.
+export type OnboardingTipo = 'CLT' | 'PJ' | 'ESTAGIO' | 'FREELANCER'
+
+export const ONBOARDING_TIPO_LABEL: Record<OnboardingTipo, string> = {
+  CLT: 'CLT',
+  PJ: 'PJ',
+  ESTAGIO: 'Estágio',
+  FREELANCER: 'Freelancer',
+}
+
+// Templates por tipo. Cada template define o checklist específico daquele
+// regime. Itens compartilhados aparecem em todos os tipos.
+export const ONBOARDING_CHECKLIST_TEMPLATES: Record<OnboardingTipo, string[]> = {
+  CLT: [
+    'Documentos admissionais recebidos (RG, CPF, CTPS, comprovantes)',
+    'Exame admissional realizado',
+    'Cadastro no eSocial',
+    'Criação de e-mail corporativo',
+    'Acesso às ferramentas internas (Slack, Jira, GDrive)',
+    'Entrega de equipamentos (notebook, periféricos)',
+    'Cadastro no plano de saúde / odontológico',
+    'Cadastro no VR/VA / iFood',
+    'Cadastro no Vale Transporte',
+    'Apresentação ao time',
+    'Treinamento de integração',
+  ],
+  PJ: [
+    'Contrato PJ assinado',
+    'CNPJ e dados bancários cadastrados',
+    'Criação de e-mail corporativo',
+    'Acesso às ferramentas internas (Slack, Jira, GDrive)',
+    'Entrega de equipamentos (se aplicável)',
+    'Cadastro no iFood / benefícios',
+    'Apresentação ao time',
+    'Treinamento de integração',
+  ],
+  ESTAGIO: [
+    'TCE (Termo de Compromisso de Estágio) assinado',
+    'Documentos do estágio recebidos (RG, CPF, comprovante de matrícula)',
+    'Apolice de seguro de estágio ativa',
+    'Plano de atividades pedagógicas definido',
+    'Criação de e-mail corporativo',
+    'Acesso às ferramentas internas (Slack, GDrive)',
+    'Entrega de equipamentos',
+    'Cadastro no Vale Transporte',
+    'Cadastro no Vale Refeição / iFood',
+    'Apresentação ao time',
+    'Treinamento de integração',
+  ],
+  FREELANCER: [
+    'Contrato de prestação de serviços assinado',
+    'Dados bancários cadastrados (PJ ou PF)',
+    'Briefing do projeto / escopo definido',
+    'Acesso pontual às ferramentas necessárias',
+    'Apresentação ao time responsável',
+  ],
+}
+
+export function regimeToOnboardingTipo(regime: Regime): OnboardingTipo {
+  return regime
 }
 
 // ═════════════════════════ ONBOARDING (RH) ═════════════════════════
@@ -262,14 +350,58 @@ export interface Onboarding {
   id: string
   candidatoId: string
   candidatoNome: string
+  candidatoEmail?: string
+  candidatoTelefone?: string
   vagaId: string
   vagaCargo: string
   empresa: string
+  // Tipo do contrato — determina o checklist usado.
+  tipo?: OnboardingTipo
+  // Regime da vaga (CLT / PJ / ESTAGIO / FREELANCER) — mantido por compat.
+  regime?: Regime
   dataAdmissao?: Timestamp
+  // Data prevista de início (informada pelo RH ao aprovar o candidato).
+  dataPrevistaInicio?: Timestamp
+  // Data prevista de término (estagiários geralmente; opcional p/ outros).
+  dataPrevistaTermino?: Timestamp
+  // Indicação (carrega quando origem === 'indicacao'): para countdown de
+  // bônus de 90 dias contado a partir do início.
+  indicadoPorNome?: string
+  indicadoPorUid?: string
   status: 'pendente' | 'em_andamento' | 'concluido'
   checklist: OnboardingItem[]
   createdAt: Timestamp
   updatedAt: Timestamp
+  // Setado quando o onboarding é concluído e o estagiário/colaborador
+  // correspondente é criado em 'estagiarios' ou 'colaboradores'.
+  estagiarioId?: string
+  colaboradorId?: string
+}
+
+// ═════════════════════════ NOTIFICAÇÕES ═════════════════════════
+// Notificações internas (sino) — ex.: aviso ao gestor de que sua nova
+// contratação entrou em onboarding ou que está perto do fim do contrato.
+export type NotificacaoTipo =
+  | 'onboarding_criado'
+  | 'onboarding_concluido'
+  | 'contrato_terminando'
+  | 'periodo_experiencia'
+  | 'outro'
+
+export interface Notificacao {
+  id: string
+  // uid do destinatário (gestor / RH).
+  destinatarioUid: string
+  destinatarioEmail?: string
+  tipo: NotificacaoTipo
+  titulo: string
+  mensagem: string
+  link?: string // rota interna pra abrir o item relacionado
+  lida: boolean
+  createdAt: Timestamp
+  // Origem (vaga, candidato, onboarding, estagio etc) — útil pra deduplicar.
+  refColecao?: string
+  refId?: string
 }
 
 // ═════════════════════════ DP — ESTAGIÁRIOS ═════════════════════════
@@ -277,6 +409,7 @@ export interface Estagiario {
   id: string
   nome: string
   email?: string
+  telefone?: string
   cpf?: string
   curso: string
   instituicao: string
@@ -284,11 +417,24 @@ export interface Estagiario {
   empresa: string
   area: string
   mentor?: string
+  gestorUid?: string
+  gestorNome?: string
   dataInicio: Timestamp
   dataTermino: Timestamp
   bolsa?: number
-  status: 'ativo' | 'finalizado' | 'desligado'
+  status: 'ativo' | 'finalizado' | 'desligado' | 'efetivado'
   observacoes?: string
+  // Origem (quando criado a partir do fluxo de onboarding).
+  candidatoId?: string
+  vagaId?: string
+  onboardingId?: string
+  // Quando o estágio é efetivado (vira PJ/CLT), guarda o id do colaborador
+  // gerado para vínculo cruzado e auditoria.
+  colaboradorId?: string
+  // Indicação (carrega quando origem === 'indicacao'): mantida no estagiário
+  // para que, ao efetivar, o colaborador herde os dados de bônus de 90 dias.
+  indicadoPorNome?: string
+  indicadoPorUid?: string
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -307,6 +453,7 @@ export interface Colaborador {
   id: string
   nome: string
   email?: string
+  telefone?: string
   cpf?: string
   cargo: string
   area: string
@@ -326,6 +473,15 @@ export interface Colaborador {
     resultado90?: 'positivo' | 'negativo' | 'pendente'
     observacoes?: string
   }
+  // Indicação (carrega quando contratado por indicação):
+  // usado pelo card de countdown de bônus de 90 dias no DP.
+  indicadoPorNome?: string
+  indicadoPorUid?: string
+  // Origem (quando criado a partir do fluxo de onboarding).
+  candidatoId?: string
+  vagaId?: string
+  onboardingId?: string
+  estagiarioId?: string // se foi efetivado de estágio
   observacoes?: string
   createdAt: Timestamp
   updatedAt: Timestamp
