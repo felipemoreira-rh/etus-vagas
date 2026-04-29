@@ -37,7 +37,8 @@ export async function removeFile(path: string): Promise<void> {
 }
 
 export function formatBytes(bytes?: number): string {
-  if (!bytes) return '—'
+  // bytes==0 é válido ("0 B"); só tratamos null/undefined como sem dado.
+  if (bytes == null) return '—'
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`

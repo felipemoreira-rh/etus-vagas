@@ -295,14 +295,19 @@ function EditVagaModal({ vaga, onClose, onSaved }: {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
+  // Carrega TODOS os usuários e filtra os com role 'gestor' OU o gestor
+  // atual da vaga (caso ele tenha sido promovido a 'rh' após ser vinculado).
+  // Sem isso, ao editar a vaga o select não exibiria o gestor atual e o save
+  // limparia gestorUid silenciosamente, revogando acesso dele aos candidatos.
   useEffect(() => {
-    const unsub = onSnapshot(query(collection(db, 'users'), where('role', '==', 'gestor')), (snap) => {
-      const list = snap.docs.map(d => ({ uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) }))
+    const unsub = onSnapshot(query(collection(db, 'users')), (snap) => {
+      const all = snap.docs.map(d => ({ uid: d.id, ...(d.data() as Omit<UserProfile, 'uid'>) }))
+      const list = all.filter(u => u.role === 'gestor' || u.uid === vaga.gestorUid)
       list.sort((a, b) => a.name.localeCompare(b.name))
       setGestores(list)
     })
     return unsub
-  }, [])
+  }, [vaga.gestorUid])
 
   // Quando o RH troca o gestor, propagamos vagaGestorUid em todos os candidatos
   // dessa vaga depois do save — caso contrário, a regra do gestor (que filtra
@@ -313,6 +318,11 @@ function EditVagaModal({ vaga, onClose, onSaved }: {
     setSaving(true)
     setErr(null)
     try {
+      // Detecta se o RH realmente alterou o gestor no select. Se não
+      // alterou (gestorUid ainda é o original), não tocamos nesses
+      // campos — isso evita silenciar gestorUid='' caso o gestor não
+      // esteja mais na lista por algum motivo (race, role mudou etc).
+      const gestorChanged = (vaga.gestorUid || '') !== (gestorUid || '')
       const g = gestores.find(x => x.uid === gestorUid)
       const patch: Record<string, unknown> = {
         empresa, cargo, time,
@@ -322,16 +332,20 @@ function EditVagaModal({ vaga, onClose, onSaved }: {
         regime, nivel, jornada, tempoExperiencia, formacao,
         cursosValidos, descricaoAtividades, requisitosTecnicos, equipamentos,
         previstaOrcamento, observacoes,
-        gestorUid: g?.uid ?? '',
-        gestorNome: g?.name ?? '',
-        gestorEmail: g?.email ?? '',
         updatedAt: serverTimestamp(),
+      }
+      if (gestorChanged) {
+        patch.gestorUid = g?.uid ?? ''
+        patch.gestorNome = g?.name ?? ''
+        patch.gestorEmail = g?.email ?? ''
       }
       await updateDoc(doc(db, 'vagas', vaga.id), patch)
 
-      // Se o gestor mudou, propaga para todos candidatos da vaga.
-      if ((vaga.gestorUid || '') !== (g?.uid || '')) {
-        // Usamos uma query separada (não subscription) pra fazer um batch puntual.
+      // Só propaga vagaGestorUid pros candidatos quando o RH efetivamente
+      // mudou o gestor. Sem essa guarda, qualquer save acidentalmente
+      // limparia o vagaGestorUid de todos os candidatos quando o gestor
+      // atual não estivesse na lista do select.
+      if (gestorChanged) {
         const { getDocs } = await import('firebase/firestore')
         const candSnap = await getDocs(query(collection(db, 'candidatos'), where('vagaId', '==', vaga.id)))
         await Promise.allSettled(candSnap.docs.map(d => updateDoc(doc(db, 'candidatos', d.id), {

@@ -106,7 +106,10 @@ export default function OnboardingDetalhe() {
         nome: o.candidatoNome,
         ...(o.candidatoEmail || cand?.email ? { email: o.candidatoEmail || cand?.email } : {}),
         ...(o.candidatoTelefone || cand?.telefone ? { telefone: o.candidatoTelefone || cand?.telefone } : {}),
-        curso: cand?.observacoes ? '' : '',
+        // O candidato não tem campo "curso" estruturado. RH pode preencher
+        // manualmente no DP > Estagiários após a criação. Se um dia for
+        // adicionado, basta substituir aqui por cand?.curso ?? ''.
+        curso: '',
         instituicao: '',
         empresa,
         area: vaga?.time || '',

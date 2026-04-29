@@ -98,7 +98,11 @@ html, body {
   color: var(--txt);
   background: var(--bg);
 }
-body { overflow: hidden; }
+/* O shell principal (.shell) usa scroll interno via .content. Mas a página
+   pública /sorteio/:id renderiza .sp-shell direto no #root e precisa rolar
+   no body em telas pequenas — então só travamos overflow do body quando
+   o shell autenticado está montado (classe app-shell-active no body). */
+body.app-shell-active { overflow: hidden; }
 
 h1, h2, h3, h4, h5, h6 { font-family: var(--ff); font-weight: 700; letter-spacing: -0.02em; }
 
