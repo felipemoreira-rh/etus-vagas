@@ -9,7 +9,10 @@ import Topbar from '../../components/Topbar'
 import type {
   Candidato, Onboarding, OnboardingTipo, Regime, RegimeTrabalho, Vaga,
 } from '../../types'
-import { getVagaEmpresas, ONBOARDING_TIPO_LABEL, regimeToOnboardingTipo } from '../../types'
+import {
+  CHECKLIST_AGENDAMENTO_TITULO,
+  getVagaEmpresas, ONBOARDING_TIPO_LABEL, regimeToOnboardingTipo,
+} from '../../types'
 
 function regimeToTrabalho(r?: Regime): RegimeTrabalho {
   if (r === 'CLT') return 'clt'
@@ -190,6 +193,22 @@ export default function OnboardingDetalhe() {
     }
   }
 
+  async function persistChecklist(updated: Onboarding['checklist']) {
+    if (!ob) return
+    const allDone = updated.every(c => c.done)
+    const anyDone = updated.some(c => c.done)
+    const status = allDone ? 'concluido' : anyDone ? 'em_andamento' : 'pendente'
+    try {
+      await updateDoc(doc(db, 'onboarding', ob.id), {
+        checklist: updated,
+        status,
+        updatedAt: serverTimestamp(),
+      })
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao atualizar item.')
+    }
+  }
+
   async function toggleItem(itemId: string) {
     if (!ob || !profile) return
     const updated = (ob.checklist || []).map(c => {
@@ -208,18 +227,31 @@ export default function OnboardingDetalhe() {
       void _a; void _b; void _c
       return { ...rest, done: false }
     })
-    const allDone = updated.every(c => c.done)
-    const anyDone = updated.some(c => c.done)
-    const status = allDone ? 'concluido' : anyDone ? 'em_andamento' : 'pendente'
-    try {
-      await updateDoc(doc(db, 'onboarding', ob.id), {
-        checklist: updated,
-        status,
-        updatedAt: serverTimestamp(),
-      })
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Erro ao atualizar item.')
-    }
+    await persistChecklist(updated)
+  }
+
+  // Item "Agendamento de onboarding" — gestor/RH grava a data direto no item.
+  // Setar uma data marca como done; limpar a data desmarca.
+  async function setScheduledAt(itemId: string, isoDate: string) {
+    if (!ob || !profile) return
+    const updated = (ob.checklist || []).map(c => {
+      if (c.id !== itemId) return c
+      if (!isoDate) {
+        const { scheduledAt: _s, doneAt: _a, doneByUid: _b, doneByName: _n, ...rest } = c
+        void _s; void _a; void _b; void _n
+        return { ...rest, done: false }
+      }
+      const ts = Timestamp.fromDate(new Date(isoDate + 'T00:00:00'))
+      return {
+        ...c,
+        scheduledAt: ts,
+        done: true,
+        doneAt: Timestamp.now(),
+        doneByUid: profile.uid,
+        doneByName: profile.name,
+      }
+    })
+    await persistChecklist(updated)
   }
 
   const done = (ob?.checklist || []).filter(c => c.done).length
@@ -299,28 +331,63 @@ export default function OnboardingDetalhe() {
             <div className="panel">
               <h3>Checklist de integração</h3>
               <div style={{ marginTop: 10 }}>
-                {(ob.checklist || []).map(item => (
-                  <div
-                    key={item.id}
-                    className={`checklist-item ${item.done ? 'done' : ''}`}
-                    onClick={() => toggleItem(item.id)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={item.done}
-                      onChange={() => toggleItem(item.id)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <div>
-                      <div className="cl-title">{item.titulo}</div>
-                      {item.descricao && <div className="cl-sub">{item.descricao}</div>}
-                      {item.done && item.doneByName && (
-                        <div className="cl-sub">Concluído por {item.doneByName}</div>
-                      )}
+                {(ob.checklist || []).map(item => {
+                  const isAgendamento = item.titulo === CHECKLIST_AGENDAMENTO_TITULO
+                  const isAuto = !!item.auto
+                  const dateValue = item.scheduledAt
+                    ? item.scheduledAt.toDate().toISOString().slice(0, 10)
+                    : ''
+                  return (
+                    <div
+                      key={item.id}
+                      className={`checklist-item ${item.done ? 'done' : ''}`}
+                      onClick={() => { if (!isAgendamento && !isAuto) toggleItem(item.id) }}
+                      style={{ cursor: isAgendamento || isAuto ? 'default' : 'pointer' }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={item.done}
+                        disabled={isAgendamento || isAuto}
+                        onChange={() => { if (!isAgendamento && !isAuto) toggleItem(item.id) }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div className="cl-title">
+                          {item.titulo}
+                          {isAuto && (
+                            <span className="bdg gray" style={{ marginLeft: 8, fontSize: 10 }}>
+                              Automático
+                            </span>
+                          )}
+                        </div>
+                        {item.descricao && <div className="cl-sub">{item.descricao}</div>}
+                        {isAgendamento && (
+                          <div className="hstack" style={{ marginTop: 6, gap: 8, alignItems: 'center' }}>
+                            <label style={{ fontSize: 11, color: 'var(--mut)' }}>Data:</label>
+                            <input
+                              type="date"
+                              value={dateValue}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => setScheduledAt(item.id, e.target.value)}
+                              style={{ fontSize: 12, padding: '4px 8px' }}
+                            />
+                            {dateValue && (
+                              <span style={{ fontSize: 11, color: 'var(--g600, #16a34a)' }}>
+                                Agendado para {fmtDate(item.scheduledAt)}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {isAuto && item.done && (
+                          <div className="cl-sub">Concluído automaticamente pelo sistema.</div>
+                        )}
+                        {item.done && !isAuto && item.doneByName && (
+                          <div className="cl-sub">Concluído por {item.doneByName}</div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           </>

@@ -299,51 +299,46 @@ export const ONBOARDING_TIPO_LABEL: Record<OnboardingTipo, string> = {
 
 // Templates por tipo. Cada template define o checklist específico daquele
 // regime. Itens compartilhados aparecem em todos os tipos.
+// Lista padronizada (mesma pra todos os tipos de contrato) definida pelo
+// RH em maio/26. O fluxo é sempre:
+//   1) enviar proposta → 2) enviar lista de documentação →
+//   3) solicitar fotos e curiosidades → 4) documentos recebidos →
+//   5) solicitação de contrato jurídico → 6) salvar docs no drive →
+//   7) solicitação de equipamentos e acessos → 8) envio de e-mail de início →
+//   9) agendamento de onboarding (com data) → 10) notificação automática
+//   pro gestor que abriu a vaga → 11) cadastro de benefícios.
+//
+// Observações:
+//   - Item 9 ("Agendamento de onboarding") aceita uma data via campo
+//     `scheduledAt` no OnboardingItem; ao gravar a data, é considerado feito.
+//   - Item 10 ("Notificação de início para o gestor") é marcado como
+//     automático (auto=true) e concluído na criação do onboarding, já que
+//     o sistema dispara a notificação pro gestor no momento da aprovação.
+const CHECKLIST_PADRAO: string[] = [
+  'Enviar proposta',
+  'Enviar lista de documentação',
+  'Solicitar fotos e curiosidades',
+  'Documentos recebidos',
+  'Solicitação de contrato jurídico',
+  'Salvar docs no drive',
+  'Solicitação de equipamentos e acessos',
+  'Envio de e-mail de início',
+  'Agendamento de onboarding',
+  'Notificação de início para o gestor que abriu a vaga',
+  'Cadastro de benefícios',
+]
+
 export const ONBOARDING_CHECKLIST_TEMPLATES: Record<OnboardingTipo, string[]> = {
-  CLT: [
-    'Documentos admissionais recebidos (RG, CPF, CTPS, comprovantes)',
-    'Exame admissional realizado',
-    'Cadastro no eSocial',
-    'Criação de e-mail corporativo',
-    'Acesso às ferramentas internas (Slack, Jira, GDrive)',
-    'Entrega de equipamentos (notebook, periféricos)',
-    'Cadastro no plano de saúde / odontológico',
-    'Cadastro no VR/VA / iFood',
-    'Cadastro no Vale Transporte',
-    'Apresentação ao time',
-    'Treinamento de integração',
-  ],
-  PJ: [
-    'Contrato PJ assinado',
-    'CNPJ e dados bancários cadastrados',
-    'Criação de e-mail corporativo',
-    'Acesso às ferramentas internas (Slack, Jira, GDrive)',
-    'Entrega de equipamentos (se aplicável)',
-    'Cadastro no iFood / benefícios',
-    'Apresentação ao time',
-    'Treinamento de integração',
-  ],
-  ESTAGIO: [
-    'TCE (Termo de Compromisso de Estágio) assinado',
-    'Documentos do estágio recebidos (RG, CPF, comprovante de matrícula)',
-    'Apolice de seguro de estágio ativa',
-    'Plano de atividades pedagógicas definido',
-    'Criação de e-mail corporativo',
-    'Acesso às ferramentas internas (Slack, GDrive)',
-    'Entrega de equipamentos',
-    'Cadastro no Vale Transporte',
-    'Cadastro no Vale Refeição / iFood',
-    'Apresentação ao time',
-    'Treinamento de integração',
-  ],
-  FREELANCER: [
-    'Contrato de prestação de serviços assinado',
-    'Dados bancários cadastrados (PJ ou PF)',
-    'Briefing do projeto / escopo definido',
-    'Acesso pontual às ferramentas necessárias',
-    'Apresentação ao time responsável',
-  ],
+  CLT: CHECKLIST_PADRAO,
+  PJ: CHECKLIST_PADRAO,
+  ESTAGIO: CHECKLIST_PADRAO,
+  FREELANCER: CHECKLIST_PADRAO,
 }
+
+// Identifica o item da lista padrão por título — útil pra lógica especial
+// (item 9 com data, item 10 automático). Mantém em sincronia com CHECKLIST_PADRAO.
+export const CHECKLIST_AGENDAMENTO_TITULO = 'Agendamento de onboarding'
+export const CHECKLIST_NOTIFICACAO_GESTOR_TITULO = 'Notificação de início para o gestor que abriu a vaga'
 
 export function regimeToOnboardingTipo(regime: Regime): OnboardingTipo {
   return regime
@@ -358,6 +353,10 @@ export interface OnboardingItem {
   doneAt?: Timestamp
   doneByUid?: string
   doneByName?: string
+  /** Data agendada — usado pelo item "Agendamento de onboarding". */
+  scheduledAt?: Timestamp
+  /** Item gerado/concluído automaticamente pelo sistema (não exige checagem manual). */
+  auto?: boolean
 }
 
 export interface Onboarding {

@@ -15,6 +15,7 @@ import type {
 } from '../../types'
 import {
   CANDIDATO_FASE_LABEL, CANDIDATO_FASE_ORDER, CANDIDATO_ORIGEM_LABEL,
+  CHECKLIST_NOTIFICACAO_GESTOR_TITULO,
   getVagaEmpresas,
   ONBOARDING_CHECKLIST_TEMPLATES, ONBOARDING_TIPO_LABEL, regimeToOnboardingTipo,
 } from '../../types'
@@ -624,11 +625,28 @@ function AprovacaoModal({
 
       // 2) Cria onboarding (só se ainda não existir).
       if (!jaTinhaOnboarding) {
-        const checklist: OnboardingItem[] = ONBOARDING_CHECKLIST_TEMPLATES[tipo].map((titulo, idx) => ({
-          id: `${Date.now()}-${idx}`,
-          titulo,
-          done: false,
-        }))
+        const temGestor = !!vaga.gestorUid
+        const checklist: OnboardingItem[] = ONBOARDING_CHECKLIST_TEMPLATES[tipo].map((titulo, idx) => {
+          // Item "Notificação de início pro gestor" é automático: o sistema
+          // dispara a notificação na aprovação (passo 3 abaixo), então marcamos
+          // como concluído já na criação se a vaga tem gestor associado.
+          if (titulo === CHECKLIST_NOTIFICACAO_GESTOR_TITULO && temGestor) {
+            return {
+              id: `${Date.now()}-${idx}`,
+              titulo,
+              done: true,
+              auto: true,
+              doneAt: Timestamp.now(),
+              doneByName: 'Sistema',
+            }
+          }
+          return {
+            id: `${Date.now()}-${idx}`,
+            titulo,
+            done: false,
+            ...(titulo === CHECKLIST_NOTIFICACAO_GESTOR_TITULO ? { auto: true } : {}),
+          }
+        })
         await addDoc(collection(db, 'onboarding'), {
           candidatoId: candidato.id,
           candidatoNome: candidato.nome,
