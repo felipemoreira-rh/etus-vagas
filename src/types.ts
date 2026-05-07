@@ -1,19 +1,7 @@
 import type { Timestamp } from 'firebase/firestore'
 
-export type Role = 'rh' | 'gestor' | 'dp'
-
-export const EMPRESAS = [
-  'ETUS',
-  'EVOLUTION',
-  'E3MEDIA',
-  'BHAZ',
-  'NONAME',
-  'E3J',
-  'PLUSDIN',
-  'ONTU',
-] as const
-
-export type Empresa = (typeof EMPRESAS)[number]
+// ═════════════════════════ USUÁRIOS ═════════════════════════
+export type Role = 'rh' | 'gestor'
 
 export interface UserProfile {
   uid: string
@@ -25,6 +13,34 @@ export interface UserProfile {
   createdAt?: Timestamp
 }
 
+// ═════════════════════════ EMPRESAS DO GRUPO ═════════════════════════
+// Lista fixa de empresas pra padronizar marcação em vagas, candidatos, etc.
+export const EMPRESA_OPTIONS = [
+  'ETUS',
+  'EVOLUTION',
+  'E3MEDIA',
+  'BHAZ',
+  'NONAME',
+  'E3J',
+  'PLUSDIN',
+  'ONTU',
+] as const
+export type Empresa = (typeof EMPRESA_OPTIONS)[number]
+
+// ═════════════════════════ MÓDULOS ═════════════════════════
+export type ModuleKey = 'rh' | 'dp'
+
+export const MODULE_LABEL: Record<ModuleKey, string> = {
+  rh: 'RH — Recrutamento',
+  dp: 'DP — Departamento Pessoal',
+}
+
+export const MODULE_SHORT: Record<ModuleKey, string> = {
+  rh: 'RH',
+  dp: 'DP',
+}
+
+// ═════════════════════════ VAGAS (RH) ═════════════════════════
 export type VagaStatus =
   | 'aberta'
   | 'triagem'
@@ -89,24 +105,26 @@ export interface Vaga {
   id: string
   status: VagaStatus
 
-  // identificação
   cargo: string
   time: string
-  empresa: string
+  // Empresas em que a vaga está aberta. Suporta multi-seleção (ex.: vaga
+  // que pode ser preenchida na ETUS ou na PLUSDIN). Para vagas legadas que
+  // só tinham `empresa: string`, o helper getVagaEmpresas() retorna esse
+  // valor como array.
+  empresas?: string[]
+  /** @deprecated Use `empresas` (array). Mantido só pra compat com docs antigos. */
+  empresa?: string
 
-  // motivo
   motivo: MotivoAbertura
   substituidoNome?: string
   justificativaAumento?: string
 
-  // condições
   regime: Regime
   nivel: Nivel
   nivelOutro?: string
   jornada: Jornada
   jornadaOutro?: string
 
-  // requisitos
   tempoExperiencia: TempoExperiencia
   formacao: Formacao
   cursosValidos?: string
@@ -114,11 +132,9 @@ export interface Vaga {
   requisitosTecnicos: string
   equipamentos?: string
 
-  // financeiro / obs
   previstaOrcamento: boolean
   observacoes?: string
 
-  // metadata
   gestorUid: string
   gestorNome: string
   gestorEmail: string
@@ -129,156 +145,487 @@ export interface Vaga {
   updatedAt: Timestamp
 
   historico: VagaMovimentacao[]
+
+  // SLA (opcional; calculado via createdAt)
+  slaMetaDias?: number
 }
 
-// Novos tipos para Candidatos
-export type CandidatoOrigem = 'linkedin' | 'indeed' | 'indicacao' | 'casting' | 'outro'
-export type CandidatoStatus = 'triagem' | 'entrevista' | 'proposta' | 'aprovado' | 'reprovado' | 'onboarding' | 'estagiario' | 'colaborador'
+// Helper pra ler empresas de uma vaga lidando com docs antigos que tinham
+// só `empresa: string` (single value). Sempre retorna um array (vazio se nada).
+export function getVagaEmpresas(v: { empresas?: string[]; empresa?: string }): string[] {
+  if (Array.isArray(v.empresas) && v.empresas.length > 0) return v.empresas
+  if (v.empresa && typeof v.empresa === 'string') return [v.empresa]
+  return []
+}
 
-export const CANDIDATO_STATUS_LABELS: Record<CandidatoStatus, string> = {
-  triagem: 'Em Triagem',
-  entrevista: 'Em Entrevista',
+// ═════════════════════════ CANDIDATOS (RH) ═════════════════════════
+export type CandidatoFase =
+  | 'triagem'
+  | 'teste_online'
+  | 'entrevista_rh'
+  | 'entrevista_gestor'
+  | 'entrevista_cultura'
+  | 'proposta'
+  | 'aprovado'
+  | 'reprovado'
+  | 'desistente'
+
+export const CANDIDATO_FASE_LABEL: Record<CandidatoFase, string> = {
+  triagem: 'Triagem',
+  teste_online: 'Teste Online',
+  entrevista_rh: 'Entrevista RH',
+  entrevista_gestor: 'Entrevista Gestor',
+  entrevista_cultura: 'Entrevista Cultura',
   proposta: 'Proposta',
   aprovado: 'Aprovado',
   reprovado: 'Reprovado',
-  onboarding: 'Em Onboarding',
-  estagiario: 'Estagiário',
-  colaborador: 'Colaborador',
+  desistente: 'Desistente',
+}
+
+export const CANDIDATO_FASE_ORDER: CandidatoFase[] = [
+  'triagem',
+  'teste_online',
+  'entrevista_rh',
+  'entrevista_gestor',
+  'entrevista_cultura',
+  'proposta',
+  'aprovado',
+  'reprovado',
+  'desistente',
+]
+
+export type CandidatoOrigem =
+  | 'linkedin'
+  | 'indeed'
+  | 'gupy'
+  | 'indicacao'
+  | 'site_etus'
+  | 'outro'
+
+export const CANDIDATO_ORIGEM_LABEL: Record<CandidatoOrigem, string> = {
+  linkedin: 'LinkedIn',
+  indeed: 'Indeed',
+  gupy: 'Gupy',
+  indicacao: 'Indicação',
+  site_etus: 'Site ETUS',
+  outro: 'Outro',
+}
+
+export interface CandidatoMovimentacao {
+  at: Timestamp
+  byUid: string
+  byName: string
+  fromFase?: CandidatoFase
+  toFase?: CandidatoFase
+  nota?: string
+}
+
+export interface Anexo {
+  url: string
+  nome: string
+  path: string
+  uploadedAt: Timestamp
+  uploadedByUid: string
+  uploadedByName: string
+  tamanho?: number
+  tipo?: 'curriculo' | 'relatorio' | 'outro'
+}
+
+export interface AgendamentoEntrevista {
+  id: string
+  titulo: string
+  inicio: Timestamp
+  fim: Timestamp
+  participantes?: string[]
+  local?: string
+  observacoes?: string
+  calendarUrl?: string
+  criadoPorUid: string
+  criadoPorNome: string
+  criadoEm: Timestamp
 }
 
 export interface Candidato {
   id: string
-  vagaId: string
-  vagaCargo?: string
-  vagaEmpresa?: string
-  
-  // dados pessoais
   nome: string
-  email: string
-  telefone: string
+  email?: string
+  telefone?: string
+  cidade?: string
+  uf?: string
   linkedin?: string
-  portfolio?: string
-  pretensaoSalarial?: string
-  
-  // origem
+
+  vagaId: string
+  vagaCargo: string
+  vagaGestorUid?: string
+
+  fase: CandidatoFase
+  score?: number // 0–100
   origem: CandidatoOrigem
-  indicacaoNome?: string // nome de quem indicou (se origem for indicação)
-  indicacaoDataInicio?: Timestamp // data de início para contar 90 dias
-  indicacaoPaga?: boolean // se a indicação já foi paga
-  
-  // status e avaliação
-  status: CandidatoStatus
-  nota?: number
+  origemOutro?: string
+  // Quando origem === 'indicacao': nome de quem indicou (referrer).
+  indicadoPorNome?: string
+  indicadoPorUid?: string
+
   observacoes?: string
-  
-  // onboarding
+  curriculumUrl?: string
+  curriculumNome?: string
+  curriculumPath?: string
+  relatorios?: Anexo[]
+  agendamentos?: AgendamentoEntrevista[]
+
+  // Preenchido quando o candidato é movido pra fase 'aprovado' (modal data prevista).
+  // Usado para: criar onboarding, calcular countdown de 90d para bônus de indicação,
+  // popular dataInicio do estagiário/colaborador ao concluir o onboarding.
   dataPrevistaInicio?: Timestamp
-  regimeContratacao?: Regime
-  
-  // checklist onboarding
-  checklistOnboarding?: CandidatoChecklist[]
-  
-  // metadata
+  dataAdmissao?: Timestamp
+
   createdAt: Timestamp
   updatedAt: Timestamp
+  historico: CandidatoMovimentacao[]
 }
 
-export interface CandidatoChecklist {
+// ═════════════════════════ ONBOARDING TIPOS ═════════════════════════
+// Cada tipo de contrato tem um checklist diferente. Mapeamos a partir do
+// regime da vaga, mas guardamos no Onboarding também pra que mudanças no
+// regime da vaga depois não quebrem o checklist em andamento.
+export type OnboardingTipo = 'CLT' | 'PJ' | 'ESTAGIO' | 'FREELANCER'
+
+export const ONBOARDING_TIPO_LABEL: Record<OnboardingTipo, string> = {
+  CLT: 'CLT',
+  PJ: 'PJ',
+  ESTAGIO: 'Estágio',
+  FREELANCER: 'Freelancer',
+}
+
+// Templates por tipo. Cada template define o checklist específico daquele
+// regime. Itens compartilhados aparecem em todos os tipos.
+// Lista padronizada (mesma pra todos os tipos de contrato) definida pelo
+// RH em maio/26. O fluxo é sempre:
+//   1) enviar proposta → 2) enviar lista de documentação →
+//   3) solicitar fotos e curiosidades → 4) documentos recebidos →
+//   5) solicitação de contrato jurídico → 6) salvar docs no drive →
+//   7) solicitação de equipamentos e acessos → 8) envio de e-mail de início →
+//   9) agendamento de onboarding (com data) → 10) notificação automática
+//   pro gestor que abriu a vaga → 11) cadastro de benefícios.
+//
+// Observações:
+//   - Item 9 ("Agendamento de onboarding") aceita uma data via campo
+//     `scheduledAt` no OnboardingItem; ao gravar a data, é considerado feito.
+//   - Item 10 ("Notificação de início para o gestor") é marcado como
+//     automático (auto=true) e concluído na criação do onboarding, já que
+//     o sistema dispara a notificação pro gestor no momento da aprovação.
+const CHECKLIST_PADRAO: string[] = [
+  'Enviar proposta',
+  'Enviar lista de documentação',
+  'Solicitar fotos e curiosidades',
+  'Documentos recebidos',
+  'Solicitação de contrato jurídico',
+  'Salvar docs no drive',
+  'Solicitação de equipamentos e acessos',
+  'Envio de e-mail de início',
+  'Agendamento de onboarding',
+  'Notificação de início para o gestor que abriu a vaga',
+  'Cadastro de benefícios',
+]
+
+export const ONBOARDING_CHECKLIST_TEMPLATES: Record<OnboardingTipo, string[]> = {
+  CLT: CHECKLIST_PADRAO,
+  PJ: CHECKLIST_PADRAO,
+  ESTAGIO: CHECKLIST_PADRAO,
+  FREELANCER: CHECKLIST_PADRAO,
+}
+
+// Identifica o item da lista padrão por título — útil pra lógica especial
+// (item 9 com data, item 10 automático). Mantém em sincronia com CHECKLIST_PADRAO.
+export const CHECKLIST_AGENDAMENTO_TITULO = 'Agendamento de onboarding'
+export const CHECKLIST_NOTIFICACAO_GESTOR_TITULO = 'Notificação de início para o gestor que abriu a vaga'
+
+export function regimeToOnboardingTipo(regime: Regime): OnboardingTipo {
+  return regime
+}
+
+// ═════════════════════════ ONBOARDING (RH) ═════════════════════════
+export interface OnboardingItem {
   id: string
-  label: string
-  checked: boolean
-  data?: string // para data de agendamento
+  titulo: string
+  descricao?: string
+  done: boolean
+  doneAt?: Timestamp
+  doneByUid?: string
+  doneByName?: string
+  /** Data agendada — usado pelo item "Agendamento de onboarding". */
+  scheduledAt?: Timestamp
+  /** Item gerado/concluído automaticamente pelo sistema (não exige checagem manual). */
+  auto?: boolean
 }
 
-// Checklist padrão por regime
-export const CHECKLIST_POR_REGIME: Record<Regime, CandidatoChecklist[]> = {
-  CLT: [
-    { id: 'proposta', label: 'Enviar proposta', checked: false },
-    { id: 'documentacao', label: 'Enviar lista de documentação', checked: false },
-    { id: 'fotos', label: 'Solicitar fotos e curiosidades', checked: false },
-    { id: 'docs_recebidos', label: 'Documentos recebidos', checked: false },
-    { id: 'contrato_juridico', label: 'Solicitação de contrato jurídico', checked: false },
-    { id: 'salvar_drive', label: 'Salvar docs no drive', checked: false },
-    { id: 'equipamentos', label: 'Solicitação de equipamentos e acessos', checked: false },
-    { id: 'email_inicio', label: 'Envio de email de início', checked: false },
-    { id: 'agendamento', label: 'Agendamento de onboarding', checked: false, data: '' },
-    { id: 'notificacao_gestor', label: 'Notificação de início para gestor', checked: false },
-    { id: 'beneficios', label: 'Cadastro de benefícios', checked: false },
-  ],
-  PJ: [
-    { id: 'proposta', label: 'Enviar proposta', checked: false },
-    { id: 'documentacao', label: 'Enviar lista de documentação', checked: false },
-    { id: 'fotos', label: 'Solicitar fotos e curiosidades', checked: false },
-    { id: 'docs_recebidos', label: 'Documentos recebidos', checked: false },
-    { id: 'contrato_juridico', label: 'Solicitação de contrato jurídico', checked: false },
-    { id: 'salvar_drive', label: 'Salvar docs no drive', checked: false },
-    { id: 'equipamentos', label: 'Solicitação de equipamentos e acessos', checked: false },
-    { id: 'email_inicio', label: 'Envio de email de início', checked: false },
-    { id: 'agendamento', label: 'Agendamento de onboarding', checked: false, data: '' },
-    { id: 'notificacao_gestor', label: 'Notificação de início para gestor', checked: false },
-    { id: 'beneficios', label: 'Cadastro de benefícios', checked: false },
-  ],
-  ESTAGIO: [
-    { id: 'proposta', label: 'Enviar proposta', checked: false },
-    { id: 'documentacao', label: 'Enviar lista de documentação', checked: false },
-    { id: 'fotos', label: 'Solicitar fotos e curiosidades', checked: false },
-    { id: 'docs_recebidos', label: 'Documentos recebidos', checked: false },
-    { id: 'contrato_juridico', label: 'Solicitação de contrato jurídico', checked: false },
-    { id: 'salvar_drive', label: 'Salvar docs no drive', checked: false },
-    { id: 'equipamentos', label: 'Solicitação de equipamentos e acessos', checked: false },
-    { id: 'email_inicio', label: 'Envio de email de início', checked: false },
-    { id: 'agendamento', label: 'Agendamento de onboarding', checked: false, data: '' },
-    { id: 'notificacao_gestor', label: 'Notificação de início para gestor', checked: false },
-    { id: 'beneficios', label: 'Cadastro de benefícios', checked: false },
-    { id: 'termo_contrato', label: 'Termo de compromisso de estágio', checked: false },
-  ],
-  FREELANCER: [
-    { id: 'proposta', label: 'Enviar proposta', checked: false },
-    { id: 'documentacao', label: 'Enviar lista de documentação', checked: false },
-    { id: 'fotos', label: 'Solicitar fotos e curiosidades', checked: false },
-    { id: 'docs_recebidos', label: 'Documentos recebidos', checked: false },
-    { id: 'contrato_juridico', label: 'Solicitação de contrato jurídico', checked: false },
-    { id: 'salvar_drive', label: 'Salvar docs no drive', checked: false },
-    { id: 'equipamentos', label: 'Solicitação de equipamentos e acessos', checked: false },
-    { id: 'email_inicio', label: 'Envio de email de início', checked: false },
-    { id: 'agendamento', label: 'Agendamento de onboarding', checked: false, data: '' },
-    { id: 'notificacao_gestor', label: 'Notificação de início para gestor', checked: false },
-  ],
-}
-
-// Tipos para Dashboard DP
-export interface Estagiario {
+export interface Onboarding {
   id: string
   candidatoId: string
+  candidatoNome: string
+  candidatoEmail?: string
+  candidatoTelefone?: string
   vagaId: string
-  nome: string
-  email: string
+  vagaCargo: string
   empresa: string
-  cargo: string
-  gestorUid: string
-  gestorNome: string
-  dataInicio: Timestamp
-  dataFim: Timestamp
-  regime: Regime
-  status: 'ativo' | 'encerrado' | 'efetivado'
-  dataEfetivacao?: Timestamp
+  // Tipo do contrato — determina o checklist usado.
+  tipo?: OnboardingTipo
+  // Regime da vaga (CLT / PJ / ESTAGIO / FREELANCER) — mantido por compat.
+  regime?: Regime
+  dataAdmissao?: Timestamp
+  // Data prevista de início (informada pelo RH ao aprovar o candidato).
+  dataPrevistaInicio?: Timestamp
+  // Data prevista de término (estagiários geralmente; opcional p/ outros).
+  dataPrevistaTermino?: Timestamp
+  // Indicação (carrega quando origem === 'indicacao'): para countdown de
+  // bônus de 90 dias contado a partir do início.
+  indicadoPorNome?: string
+  indicadoPorUid?: string
+  status: 'pendente' | 'em_andamento' | 'concluido'
+  checklist: OnboardingItem[]
   createdAt: Timestamp
   updatedAt: Timestamp
+  // Setado quando o onboarding é concluído e o estagiário/colaborador
+  // correspondente é criado em 'estagiarios' ou 'colaboradores'.
+  estagiarioId?: string
+  colaboradorId?: string
+}
+
+// ═════════════════════════ NOTIFICAÇÕES ═════════════════════════
+// Notificações internas (sino) — ex.: aviso ao gestor de que sua nova
+// contratação entrou em onboarding ou que está perto do fim do contrato.
+export type NotificacaoTipo =
+  | 'onboarding_criado'
+  | 'onboarding_concluido'
+  | 'contrato_terminando'
+  | 'periodo_experiencia'
+  | 'outro'
+
+export interface Notificacao {
+  id: string
+  // uid do destinatário (gestor / RH).
+  destinatarioUid: string
+  destinatarioEmail?: string
+  tipo: NotificacaoTipo
+  titulo: string
+  mensagem: string
+  link?: string // rota interna pra abrir o item relacionado
+  lida: boolean
+  createdAt: Timestamp
+  // Origem (vaga, candidato, onboarding, estagio etc) — útil pra deduplicar.
+  refColecao?: string
+  refId?: string
+}
+
+// ═════════════════════════ DP — ESTAGIÁRIOS ═════════════════════════
+export interface Estagiario {
+  id: string
+  nome: string
+  email?: string
+  telefone?: string
+  cpf?: string
+  curso: string
+  instituicao: string
+  semestre?: string
+  empresa: string
+  area: string
+  mentor?: string
+  gestorUid?: string
+  gestorNome?: string
+  dataInicio: Timestamp
+  dataTermino: Timestamp
+  bolsa?: number
+  status: 'ativo' | 'finalizado' | 'desligado' | 'efetivado'
+  observacoes?: string
+  // Origem (quando criado a partir do fluxo de onboarding).
+  candidatoId?: string
+  vagaId?: string
+  onboardingId?: string
+  // Quando o estágio é efetivado (vira PJ/CLT), guarda o id do colaborador
+  // gerado para vínculo cruzado e auditoria.
+  colaboradorId?: string
+  // Indicação (carrega quando origem === 'indicacao'): mantida no estagiário
+  // para que, ao efetivar, o colaborador herde os dados de bônus de 90 dias.
+  indicadoPorNome?: string
+  indicadoPorUid?: string
+  createdAt: Timestamp
+  updatedAt: Timestamp
+}
+
+// ═════════════════════════ DP — COLABORADORES ═════════════════════════
+export type RegimeTrabalho = 'clt' | 'pj' | 'estagio' | 'freelancer'
+
+export const REGIME_TRABALHO_LABEL: Record<RegimeTrabalho, string> = {
+  clt: 'CLT',
+  pj: 'PJ',
+  estagio: 'Estágio',
+  freelancer: 'Freelancer',
 }
 
 export interface Colaborador {
   id: string
-  candidatoId: string
-  vagaId: string
   nome: string
-  email: string
-  empresa: string
+  email?: string
+  telefone?: string
+  cpf?: string
   cargo: string
-  gestorUid: string
-  gestorNome: string
-  dataInicio: Timestamp
-  regime: Regime
-  status: 'ativo' | 'demitido'
+  area: string
+  empresa: string
+  regime: RegimeTrabalho
+  dataAdmissao: Timestamp
+  dataDemissao?: Timestamp
+  salario?: number
+  gestorUid?: string
+  gestorNome?: string
+  status: 'ativo' | 'ferias' | 'afastado' | 'desligado'
+  experiencia?: {
+    inicio: Timestamp
+    fim45?: Timestamp
+    fim90?: Timestamp
+    resultado45?: 'positivo' | 'negativo' | 'pendente'
+    resultado90?: 'positivo' | 'negativo' | 'pendente'
+    observacoes?: string
+  }
+  // Indicação (carrega quando contratado por indicação):
+  // usado pelo card de countdown de bônus de 90 dias no DP.
+  indicadoPorNome?: string
+  indicadoPorUid?: string
+  // Origem (quando criado a partir do fluxo de onboarding).
+  candidatoId?: string
+  vagaId?: string
+  onboardingId?: string
+  estagiarioId?: string // se foi efetivado de estágio
+  observacoes?: string
+  // Histórico de suspensões temporárias de contrato (afastamento por
+  // doença, maternidade, licença não-remunerada etc.). O gestor solicita
+  // direto pelo app e o RH vê no histórico — sem aprovação formal.
+  suspensoes?: Suspensao[]
   createdAt: Timestamp
   updatedAt: Timestamp
+}
+
+export interface Suspensao {
+  id: string
+  /** Tipo de afastamento — só pra agrupar/filtrar no histórico do RH. */
+  tipo: 'doenca' | 'maternidade' | 'paternidade' | 'licenca' | 'acidente' | 'outro'
+  motivo: string
+  inicio: Timestamp
+  /** Quando termina; se vazio, suspensão ainda está em aberto. */
+  fim?: Timestamp
+  /** 'ativa' enquanto sem `fim`; 'encerrada' quando o gestor fecha. */
+  status: 'ativa' | 'encerrada'
+  solicitanteUid: string
+  solicitanteNome: string
+  criadoEm: Timestamp
+  encerradoEm?: Timestamp
+}
+
+export const SUSPENSAO_TIPO_LABEL: Record<Suspensao['tipo'], string> = {
+  doenca: 'Doença / atestado médico',
+  maternidade: 'Licença maternidade',
+  paternidade: 'Licença paternidade',
+  licenca: 'Licença não-remunerada',
+  acidente: 'Acidente de trabalho',
+  outro: 'Outro',
+}
+
+// ═════════════════════════ FIN — NOTAS IFOOD ═════════════════════════
+export interface NotaIfood {
+  id: string
+  data: Timestamp
+  restaurante: string
+  colaboradorUid?: string
+  colaboradorNome: string
+  area?: string
+  empresa?: string
+  valor: number
+  descricao?: string
+  anexoUrl?: string
+  status: 'pendente' | 'aprovado' | 'pago' | 'rejeitado'
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  createdByUid: string
+  createdByName: string
+}
+
+// ═════════════════════════ FIN — OUTROS PAGAMENTOS ═════════════════════════
+export type PagamentoCategoria =
+  | 'vale_refeicao'
+  | 'mobilidade'
+  | 'reembolso'
+  | 'bonus'
+  | 'treinamento'
+  | 'equipamento'
+  | 'outros'
+
+export const PAGAMENTO_CAT_LABEL: Record<PagamentoCategoria, string> = {
+  vale_refeicao: 'Vale refeição',
+  mobilidade: 'Mobilidade',
+  reembolso: 'Reembolso',
+  bonus: 'Bônus',
+  treinamento: 'Treinamento',
+  equipamento: 'Equipamento',
+  outros: 'Outros',
+}
+
+export interface Pagamento {
+  id: string
+  data: Timestamp
+  descricao: string
+  categoria: PagamentoCategoria
+  valor: number
+  colaboradorUid?: string
+  colaboradorNome?: string
+  area?: string
+  empresa?: string
+  anexoUrl?: string
+  status: 'pendente' | 'aprovado' | 'pago' | 'rejeitado'
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  createdByUid: string
+  createdByName: string
+}
+
+// ═════════════════════════ HELPERS ═════════════════════════
+export const NIVEL_LABEL: Record<Nivel, string> = {
+  estagiario: 'Estagiário',
+  trainee: 'Trainee',
+  assistente: 'Assistente',
+  junior: 'Júnior',
+  pleno: 'Pleno',
+  senior: 'Sênior',
+  especialista: 'Especialista',
+  coordenador: 'Coordenador',
+  gerente: 'Gerente',
+  outro: 'Outro',
+}
+
+export const JORNADA_LABEL: Record<Jornada, string> = {
+  hibrido: 'Híbrido',
+  presencial: 'Presencial',
+  remoto: 'Remoto',
+  outro: 'Outro',
+}
+
+export const EXP_LABEL: Record<TempoExperiencia, string> = {
+  sem_minimo: 'Sem tempo mínimo',
+  '1_3': '1 a 3 anos',
+  '3_5': '3 a 5 anos',
+  '5_8': '5 a 8 anos',
+  mais_8: 'Mais de 8 anos',
+}
+
+export const FORMACAO_LABEL: Record<Formacao, string> = {
+  ensino_medio: 'Ensino médio',
+  superior_incompleto: 'Superior incompleto',
+  superior_completo: 'Superior completo',
+  pos: 'Pós-graduação',
+  mestrado_doutorado: 'Mestrado / Doutorado',
+}
+
+export const REGIME_LABEL: Record<Regime, string> = {
+  PJ: 'PJ',
+  CLT: 'CLT',
+  ESTAGIO: 'Estágio',
+  FREELANCER: 'Freelancer',
 }

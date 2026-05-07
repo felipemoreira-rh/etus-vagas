@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import type { Role } from '../types'
+import { allowedDomainsHuman, isEmailAllowed } from '../utils/authAllowlist'
 
 export default function Signup() {
   const { signup } = useAuth()
@@ -18,6 +19,10 @@ export default function Signup() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
+    if (!isEmailAllowed(email)) {
+      setError(`Somente e-mails corporativos (${allowedDomainsHuman()}) podem se cadastrar aqui. Fale com o RH se precisar de um acesso externo.`)
+      return
+    }
     setLoading(true)
     try {
       await signup({ email, password, name, role, empresa, area })
@@ -33,14 +38,16 @@ export default function Signup() {
   return (
     <div className="auth-shell">
       <div className="auth-hero">
-        <div className="logo">ETUS</div>
+        <div className="logo">
+          <img src="/logo-etus-white.png" alt="ETUS" className="auth-logo-img" />
+        </div>
         <div>
           <h2>
-            Junte-se ao <span>time</span> de construção
+            Construindo <span>novos times</span> com clareza.
           </h2>
-          <p style={{ color: 'var(--neutral-300)', marginTop: 16, maxWidth: 480, fontSize: 15, lineHeight: 1.6 }}>
-            Crie sua conta para abrir vagas, acompanhar o processo seletivo e colaborar com o
-            Time de Gente em cada contratação.
+          <p>
+            Crie sua conta para abrir vagas, acompanhar candidatos e colaborar com o Time de Gente
+            em cada contratação.
           </p>
         </div>
         <div className="footnote">Time de Gente · Grupo ETUS</div>
@@ -75,12 +82,10 @@ export default function Signup() {
           <div className="field">
             <label>Perfil de acesso</label>
             <div className="radio-group">
-              {(
-                [
-                  { v: 'gestor', l: 'Gestor' },
-                  { v: 'rh', l: 'RH' },
-                ] as { v: Role; l: string }[]
-              ).map((opt) => (
+              {([
+                { v: 'gestor', l: 'Gestor' },
+                { v: 'rh', l: 'RH' },
+              ] as { v: Role; l: string }[]).map((opt) => (
                 <label
                   key={opt.v}
                   className={'radio-option' + (role === opt.v ? ' selected' : '')}
@@ -113,8 +118,8 @@ export default function Signup() {
           <button className="btn btn-primary" type="submit" disabled={loading}>
             {loading ? 'Criando conta…' : 'Criar conta'}
           </button>
-          <p style={{ fontSize: 13 }}>
-            Já tem conta? <Link to="/login">Entrar</Link>
+          <p style={{ fontSize: 12 }}>
+            Já tem conta? <Link to="/login" style={{ color: 'var(--g600)', fontWeight: 600 }}>Entrar</Link>
           </p>
         </form>
       </div>
