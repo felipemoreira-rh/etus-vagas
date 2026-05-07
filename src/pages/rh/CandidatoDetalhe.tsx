@@ -15,6 +15,7 @@ import type {
 } from '../../types'
 import {
   CANDIDATO_FASE_LABEL, CANDIDATO_FASE_ORDER, CANDIDATO_ORIGEM_LABEL,
+  getVagaEmpresas,
   ONBOARDING_CHECKLIST_TEMPLATES, ONBOARDING_TIPO_LABEL, regimeToOnboardingTipo,
 } from '../../types'
 
@@ -635,7 +636,9 @@ function AprovacaoModal({
           ...(candidato.telefone ? { candidatoTelefone: candidato.telefone } : {}),
           vagaId: candidato.vagaId,
           vagaCargo: candidato.vagaCargo,
-          empresa: vaga.empresa,
+          // Onboarding herda a primeira empresa selecionada na vaga (campo
+          // string simples, já que cada onboarding pertence a uma única empresa).
+          empresa: getVagaEmpresas(vaga)[0] || '',
           tipo,
           regime: vaga.regime,
           dataPrevistaInicio: inicioTs,

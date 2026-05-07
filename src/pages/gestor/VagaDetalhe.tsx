@@ -6,6 +6,7 @@ import Topbar from '../../components/Topbar'
 import StatusBadge from '../../components/StatusBadge'
 import VagaDetalheView from '../shared/VagaDetalheView'
 import type { Vaga } from '../../types'
+import { getVagaEmpresas } from '../../types'
 
 export default function GestorVagaDetalhe() {
   const { id } = useParams()
@@ -54,7 +55,7 @@ export default function GestorVagaDetalhe() {
                   <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mut)', fontWeight: 700 }}>
                     Empresa
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{vaga.empresa}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{getVagaEmpresas(vaga).join(' · ') || '—'}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mut)', fontWeight: 700 }}>

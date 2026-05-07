@@ -107,7 +107,13 @@ export interface Vaga {
 
   cargo: string
   time: string
-  empresa: string
+  // Empresas em que a vaga está aberta. Suporta multi-seleção (ex.: vaga
+  // que pode ser preenchida na ETUS ou na PLUSDIN). Para vagas legadas que
+  // só tinham `empresa: string`, o helper getVagaEmpresas() retorna esse
+  // valor como array.
+  empresas?: string[]
+  /** @deprecated Use `empresas` (array). Mantido só pra compat com docs antigos. */
+  empresa?: string
 
   motivo: MotivoAbertura
   substituidoNome?: string
@@ -142,6 +148,14 @@ export interface Vaga {
 
   // SLA (opcional; calculado via createdAt)
   slaMetaDias?: number
+}
+
+// Helper pra ler empresas de uma vaga lidando com docs antigos que tinham
+// só `empresa: string` (single value). Sempre retorna um array (vazio se nada).
+export function getVagaEmpresas(v: { empresas?: string[]; empresa?: string }): string[] {
+  if (Array.isArray(v.empresas) && v.empresas.length > 0) return v.empresas
+  if (v.empresa && typeof v.empresa === 'string') return [v.empresa]
+  return []
 }
 
 // ═════════════════════════ CANDIDATOS (RH) ═════════════════════════
@@ -483,8 +497,37 @@ export interface Colaborador {
   onboardingId?: string
   estagiarioId?: string // se foi efetivado de estágio
   observacoes?: string
+  // Histórico de suspensões temporárias de contrato (afastamento por
+  // doença, maternidade, licença não-remunerada etc.). O gestor solicita
+  // direto pelo app e o RH vê no histórico — sem aprovação formal.
+  suspensoes?: Suspensao[]
   createdAt: Timestamp
   updatedAt: Timestamp
+}
+
+export interface Suspensao {
+  id: string
+  /** Tipo de afastamento — só pra agrupar/filtrar no histórico do RH. */
+  tipo: 'doenca' | 'maternidade' | 'paternidade' | 'licenca' | 'acidente' | 'outro'
+  motivo: string
+  inicio: Timestamp
+  /** Quando termina; se vazio, suspensão ainda está em aberto. */
+  fim?: Timestamp
+  /** 'ativa' enquanto sem `fim`; 'encerrada' quando o gestor fecha. */
+  status: 'ativa' | 'encerrada'
+  solicitanteUid: string
+  solicitanteNome: string
+  criadoEm: Timestamp
+  encerradoEm?: Timestamp
+}
+
+export const SUSPENSAO_TIPO_LABEL: Record<Suspensao['tipo'], string> = {
+  doenca: 'Doença / atestado médico',
+  maternidade: 'Licença maternidade',
+  paternidade: 'Licença paternidade',
+  licenca: 'Licença não-remunerada',
+  acidente: 'Acidente de trabalho',
+  outro: 'Outro',
 }
 
 // ═════════════════════════ FIN — NOTAS IFOOD ═════════════════════════
@@ -586,59 +629,4 @@ export const REGIME_LABEL: Record<Regime, string> = {
   CLT: 'CLT',
   ESTAGIO: 'Estágio',
   FREELANCER: 'Freelancer',
-}
-
-// ═════════════════════════ SORTEIOS ═════════════════════════
-// Feature stand-alone: RH cria sorteio, página pública recebe inscrições
-// com login Google (bloqueio por domínio corporativo). O sistema sorteia
-// 1 vencedor aleatório dentro da janela configurada pelo RH.
-export type SorteioStatus = 'rascunho' | 'inscricoes_abertas' | 'aguardando_sorteio' | 'sorteado' | 'cancelado'
-
-export const SORTEIO_STATUS_LABEL: Record<SorteioStatus, string> = {
-  rascunho: 'Rascunho',
-  inscricoes_abertas: 'Inscrições abertas',
-  aguardando_sorteio: 'Aguardando sorteio',
-  sorteado: 'Sorteado',
-  cancelado: 'Cancelado',
-}
-
-export interface Sorteio {
-  id: string
-  titulo: string
-  descricao?: string
-  premio: string
-
-  // Informativo só pra exibição — "data do evento do prêmio".
-  dataEvento?: Timestamp
-
-  // Janela em que o botão "Sortear" fica habilitado pro RH. Inscrições
-  // são automaticamente fechadas quando `janelaSorteioInicio` passa.
-  janelaSorteioInicio: Timestamp
-  janelaSorteioFim: Timestamp
-
-  status: SorteioStatus
-
-  // Metadados de criação.
-  criadoPorUid: string
-  criadoPorNome: string
-  criadoEm: Timestamp
-
-  // Vencedor (preenchido quando sorteado).
-  vencedorUid?: string
-  vencedorNome?: string
-  vencedorEmail?: string
-  sorteadoEm?: Timestamp
-  sorteadoPorUid?: string
-  sorteadoPorNome?: string
-
-  // Contador denormalizado pra exibir na lista sem precisar ler a
-  // subcoleção inteira. Atualizado a cada inscrição.
-  totalInscritos?: number
-}
-
-export interface SorteioParticipante {
-  uid: string
-  nome: string
-  email: string
-  inscritoEm: Timestamp
 }

@@ -4,8 +4,8 @@ import {
 } from 'firebase/firestore'
 import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
-import type { Colaborador, RegimeTrabalho } from '../../types'
-import { EMPRESA_OPTIONS, REGIME_TRABALHO_LABEL } from '../../types'
+import type { Colaborador, RegimeTrabalho, Suspensao } from '../../types'
+import { EMPRESA_OPTIONS, REGIME_TRABALHO_LABEL, SUSPENSAO_TIPO_LABEL } from '../../types'
 
 type ColaboradorStatus = Colaborador['status']
 
@@ -240,9 +240,106 @@ export default function Colaboradores() {
         </div>
       </div>
 
+      <HistoricoSuspensoes items={items} />
+
       {openModal && <ColaboradorModal onClose={() => setOpenModal(false)} />}
       {editing && <ColaboradorModal colaborador={editing} onClose={() => setEditing(null)} />}
     </>
+  )
+}
+
+// Histórico completo de suspensões de contrato — só aparece pro RH no DP
+// (gestor vê uma versão resumida em /gestor/equipe). Inclui filtro por
+// status e tipo, pra facilitar auditoria.
+function HistoricoSuspensoes({ items }: { items: Colaborador[] }) {
+  type Linha = Suspensao & { colaboradorId: string; colaboradorNome: string; cargo: string; empresa: string }
+  const [statusF, setStatusF] = useState<'todos' | 'ativa' | 'encerrada'>('todos')
+  const [tipoF, setTipoF] = useState<'todos' | Suspensao['tipo']>('todos')
+
+  const todas = useMemo<Linha[]>(() => {
+    const list: Linha[] = []
+    for (const c of items) {
+      for (const s of (c.suspensoes || [])) {
+        list.push({ ...s, colaboradorId: c.id, colaboradorNome: c.nome, cargo: c.cargo, empresa: c.empresa })
+      }
+    }
+    list.sort((a, b) => (b.criadoEm?.toMillis?.() ?? 0) - (a.criadoEm?.toMillis?.() ?? 0))
+    return list
+  }, [items])
+
+  const filtered = useMemo(() => {
+    return todas.filter(s => {
+      if (statusF !== 'todos' && s.status !== statusF) return false
+      if (tipoF !== 'todos' && s.tipo !== tipoF) return false
+      return true
+    })
+  }, [todas, statusF, tipoF])
+
+  return (
+    <div className="content" style={{ paddingTop: 0 }}>
+      <div className="panel">
+        <div className="ph">
+          <div className="pt">Histórico de suspensões de contrato</div>
+          <div style={{ fontSize: 11, color: 'var(--mut)' }}>
+            Afastamentos solicitados pelos gestores. {todas.length} {todas.length === 1 ? 'registro' : 'registros'} no total.
+          </div>
+        </div>
+        <div className="filter-bar">
+          <select value={statusF} onChange={(e) => setStatusF(e.target.value as typeof statusF)}>
+            <option value="todos">Todos os status</option>
+            <option value="ativa">Em curso</option>
+            <option value="encerrada">Encerradas</option>
+          </select>
+          <select value={tipoF} onChange={(e) => setTipoF(e.target.value as typeof tipoF)}>
+            <option value="todos">Todos os tipos</option>
+            {Object.entries(SUSPENSAO_TIPO_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+        </div>
+        {filtered.length === 0 ? (
+          <div className="empty-sub" style={{ padding: 14 }}>
+            Nenhum registro de suspensão {todas.length === 0 ? 'ainda' : 'com esses filtros'}.
+          </div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Colaborador</th>
+                <th>Empresa</th>
+                <th>Tipo</th>
+                <th>Início</th>
+                <th>Fim</th>
+                <th>Status</th>
+                <th>Solicitado por</th>
+                <th>Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(s => (
+                <tr key={`${s.colaboradorId}-${s.id}`}>
+                  <td>
+                    <div className="tdm">{s.colaboradorNome}</div>
+                    <div className="tds">{s.cargo}</div>
+                  </td>
+                  <td style={{ fontSize: 12, color: 'var(--mut)' }}>{s.empresa || '—'}</td>
+                  <td style={{ fontSize: 12 }}>{SUSPENSAO_TIPO_LABEL[s.tipo]}</td>
+                  <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(s.inicio)}</td>
+                  <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(s.fim)}</td>
+                  <td>
+                    <span className={`bdg ${s.status === 'ativa' ? 'info' : 'gray'}`}>
+                      {s.status === 'ativa' ? 'Em curso' : 'Encerrada'}
+                    </span>
+                  </td>
+                  <td style={{ fontSize: 11, color: 'var(--mut)' }}>{s.solicitanteNome}</td>
+                  <td style={{ fontSize: 12, whiteSpace: 'pre-wrap' }}>{s.motivo || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   )
 }
 

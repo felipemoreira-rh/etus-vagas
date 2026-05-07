@@ -19,12 +19,16 @@ export default function NovaVaga() {
   const { profile } = useAuth()
   const navigate = useNavigate()
 
-  // Pre-fill com empresa do perfil só se ela estiver na lista oficial —
-  // senão o select abre vazio e o gestor é obrigado a escolher uma das 8.
-  const initialEmpresa = profile?.empresa && (EMPRESA_OPTIONS as readonly string[]).includes(profile.empresa)
-    ? profile.empresa
-    : ''
-  const [empresa, setEmpresa] = useState<string>(initialEmpresa)
+  // Pre-fill com a empresa do perfil só se ela estiver na lista oficial.
+  // O campo agora aceita múltiplas empresas (ex.: vaga aberta na ETUS e
+  // também na PLUSDIN); guardamos no Firestore como `empresas: string[]`.
+  const initialEmpresas = profile?.empresa && (EMPRESA_OPTIONS as readonly string[]).includes(profile.empresa)
+    ? [profile.empresa]
+    : []
+  const [empresas, setEmpresas] = useState<string[]>(initialEmpresas)
+  function toggleEmpresa(emp: string) {
+    setEmpresas(prev => prev.includes(emp) ? prev.filter(e => e !== emp) : [...prev, emp])
+  }
   const [cargo, setCargo] = useState('')
   const [time, setTime] = useState(profile?.area || '')
   const [motivo, setMotivo] = useState<MotivoAbertura>('aumento')
@@ -49,6 +53,10 @@ export default function NovaVaga() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!profile) return
+    if (empresas.length === 0) {
+      setError('Selecione pelo menos uma empresa do grupo.')
+      return
+    }
     setError(null)
     setSubmitting(true)
     try {
@@ -63,7 +71,10 @@ export default function NovaVaga() {
         status: 'aberta',
         cargo,
         time,
-        empresa,
+        // Novo formato (multi). Mantemos `empresa` (string) populado com a
+        // primeira selecionada só pra compat com listagens/filtros antigos.
+        empresas,
+        empresa: empresas[0],
         motivo,
         substituidoNome: motivo === 'substituicao' ? substituidoNome : '',
         justificativaAumento: motivo === 'aumento' ? justificativaAumento : '',
@@ -109,12 +120,20 @@ export default function NovaVaga() {
           <div className="panel">
             <h3>Identificação</h3>
             <div className="form-grid">
-              <div className="field">
-                <label>Empresa do Grupo *</label>
-                <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} required>
-                  <option value="">— selecione —</option>
-                  {EMPRESA_OPTIONS.map(emp => <option key={emp} value={emp}>{emp}</option>)}
-                </select>
+              <div className="field full">
+                <label>Empresas do Grupo * <span style={{ color: 'var(--mut)', fontWeight: 400, fontSize: 11 }}>(marque uma ou mais)</span></label>
+                <div className="checkbox-grid">
+                  {EMPRESA_OPTIONS.map(emp => (
+                    <label key={emp} className={'checkbox-option' + (empresas.includes(emp) ? ' selected' : '')}>
+                      <input
+                        type="checkbox"
+                        checked={empresas.includes(emp)}
+                        onChange={() => toggleEmpresa(emp)}
+                      />
+                      {emp}
+                    </label>
+                  ))}
+                </div>
               </div>
               <div className="field">
                 <label>Nome do cargo (para divulgação) *</label>

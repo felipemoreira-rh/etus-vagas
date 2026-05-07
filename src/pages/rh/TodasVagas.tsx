@@ -5,7 +5,7 @@ import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
 import StatusBadge from '../../components/StatusBadge'
 import type { Vaga, VagaStatus } from '../../types'
-import { STATUS_LABELS, STATUS_ORDER } from '../../types'
+import { getVagaEmpresas, STATUS_LABELS, STATUS_ORDER } from '../../types'
 
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
@@ -21,9 +21,9 @@ function daysSince(ts?: { toDate: () => Date } | null) {
 }
 
 function toCsv(rows: Vaga[]) {
-  const header = ['ID','Cargo','Time','Empresa','Status','Gestor','Email do gestor','Regime','Nível','Jornada','Aberta em','Dias em aberto']
+  const header = ['ID','Cargo','Time','Empresas','Status','Gestor','Email do gestor','Regime','Nível','Jornada','Aberta em','Dias em aberto']
   const body = rows.map(v => [
-    v.id, v.cargo, v.time, v.empresa, STATUS_LABELS[v.status],
+    v.id, v.cargo, v.time, getVagaEmpresas(v).join(' / '), STATUS_LABELS[v.status],
     v.gestorNome, v.gestorEmail, v.regime, v.nivel, v.jornada,
     formatDate(v.createdAt), String(daysSince(v.createdAt)),
   ].map(cell => '"' + String(cell ?? '').replace(/"/g, '""') + '"').join(','))
@@ -49,14 +49,16 @@ export default function TodasVagas() {
 
   const empresas = useMemo(() => {
     const s = new Set<string>()
-    vagas.forEach(v => { if (v.empresa) s.add(v.empresa) })
+    vagas.forEach(v => getVagaEmpresas(v).forEach(e => s.add(e)))
     return [...s].sort()
   }, [vagas])
 
   const filtered = useMemo(() => {
     return vagas.filter(v => {
       if (statusFilter !== 'todas' && v.status !== statusFilter) return false
-      if (empresaFilter !== 'todas' && v.empresa !== empresaFilter) return false
+      // Multi-empresa: vaga aparece se a empresa filtrada estiver entre as
+      // empresas marcadas (ou se a vaga legada tem `empresa` igual ao filtro).
+      if (empresaFilter !== 'todas' && !getVagaEmpresas(v).includes(empresaFilter)) return false
       if (search) {
         const s = search.toLowerCase()
         if (!(v.cargo.toLowerCase().includes(s) ||
@@ -152,7 +154,7 @@ export default function TodasVagas() {
                     <tr key={v.id}>
                       <td><div className="tdm">{v.cargo}</div></td>
                       <td style={{ fontSize: 12, color: 'var(--mut)' }}>{v.time}</td>
-                      <td style={{ fontSize: 12, color: 'var(--mut)' }}>{v.empresa}</td>
+                      <td style={{ fontSize: 12, color: 'var(--mut)' }}>{getVagaEmpresas(v).join(' · ') || '—'}</td>
                       <td style={{ fontSize: 12, color: 'var(--mut)' }}>{v.gestorNome}</td>
                       <td><StatusBadge status={v.status} /></td>
                       <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(v.createdAt)}</td>

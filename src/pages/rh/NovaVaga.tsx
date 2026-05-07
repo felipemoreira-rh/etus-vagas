@@ -19,7 +19,11 @@ export default function RhNovaVaga() {
   const [gestores, setGestores] = useState<UserProfile[]>([])
   const [gestorUid, setGestorUid] = useState<string>('')
 
-  const [empresa, setEmpresa] = useState('')
+  // Multi-empresa: vaga pode estar aberta em mais de uma empresa do grupo.
+  const [empresas, setEmpresas] = useState<string[]>([])
+  function toggleEmpresa(emp: string) {
+    setEmpresas(prev => prev.includes(emp) ? prev.filter(e => e !== emp) : [...prev, emp])
+  }
   const [cargo, setCargo] = useState('')
   const [time, setTime] = useState('')
   const [motivo, setMotivo] = useState<MotivoAbertura>('aumento')
@@ -52,6 +56,10 @@ export default function RhNovaVaga() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!profile) return
+    if (empresas.length === 0) {
+      setError('Selecione pelo menos uma empresa do grupo.')
+      return
+    }
     setError(null)
     setSubmitting(true)
     try {
@@ -73,7 +81,9 @@ export default function RhNovaVaga() {
       }
       const ref = await addDoc(collection(db, 'vagas'), {
         status: 'aberta',
-        cargo, time, empresa,
+        cargo, time,
+        empresas,
+        empresa: empresas[0],
         motivo,
         substituidoNome: motivo === 'substituicao' ? substituidoNome : '',
         justificativaAumento: motivo === 'aumento' ? justificativaAumento : '',
@@ -104,12 +114,20 @@ export default function RhNovaVaga() {
           <div className="panel">
             <h3>Identificação</h3>
             <div className="form-grid">
-              <div className="field">
-                <label>Empresa *</label>
-                <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} required>
-                  <option value="">— selecione —</option>
-                  {EMPRESA_OPTIONS.map(emp => <option key={emp} value={emp}>{emp}</option>)}
-                </select>
+              <div className="field full">
+                <label>Empresas * <span style={{ color: 'var(--mut)', fontWeight: 400, fontSize: 11 }}>(marque uma ou mais)</span></label>
+                <div className="checkbox-grid">
+                  {EMPRESA_OPTIONS.map(emp => (
+                    <label key={emp} className={'checkbox-option' + (empresas.includes(emp) ? ' selected' : '')}>
+                      <input
+                        type="checkbox"
+                        checked={empresas.includes(emp)}
+                        onChange={() => toggleEmpresa(emp)}
+                      />
+                      {emp}
+                    </label>
+                  ))}
+                </div>
               </div>
               <div className="field">
                 <label>Cargo (divulgação) *</label>

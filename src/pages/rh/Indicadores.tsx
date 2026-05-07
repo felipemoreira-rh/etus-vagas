@@ -12,6 +12,7 @@ import type { Candidato, Vaga, VagaStatus } from '../../types'
 import {
   CANDIDATO_FASE_LABEL,
   CANDIDATO_FASE_ORDER,
+  getVagaEmpresas,
   STATUS_LABELS,
 } from '../../types'
 
@@ -189,7 +190,7 @@ export default function Indicadores() {
                       <div className="sla-hd">
                         <div>
                           <div className="sla-nm">{v.cargo}</div>
-                          <div className="sla-dp">{v.time} · {v.empresa}</div>
+                          <div className="sla-dp">{v.time} · {getVagaEmpresas(v).join(' / ') || '—'}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div className="sla-dv" style={{ color: days >= SLA_META_DIAS ? 'var(--bad)' : days >= 25 ? 'var(--warn)' : 'var(--ok)' }}>

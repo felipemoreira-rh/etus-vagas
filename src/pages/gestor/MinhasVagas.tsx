@@ -7,7 +7,7 @@ import Topbar from '../../components/Topbar'
 import KpiCard from '../../components/KpiCard'
 import StatusBadge from '../../components/StatusBadge'
 import type { Vaga, VagaStatus } from '../../types'
-import { STATUS_LABELS, STATUS_ORDER } from '../../types'
+import { getVagaEmpresas, STATUS_LABELS, STATUS_ORDER } from '../../types'
 
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
@@ -118,7 +118,7 @@ export default function GestorMinhasVagas() {
                     <tr key={v.id}>
                       <td><div className="tdm">{v.cargo}</div></td>
                       <td style={{ fontSize: 12, color: 'var(--mut)' }}>{v.time}</td>
-                      <td style={{ fontSize: 12, color: 'var(--mut)' }}>{v.empresa}</td>
+                      <td style={{ fontSize: 12, color: 'var(--mut)' }}>{getVagaEmpresas(v).join(' · ') || '—'}</td>
                       <td><StatusBadge status={v.status} /></td>
                       <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(v.createdAt)}</td>
                       <td>

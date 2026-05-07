@@ -17,7 +17,6 @@ const NAV: Record<ModuleKey, NavItem[]> = {
     { to: '/rh/vagas', label: 'Vagas', icon: '◱' },
     { to: '/rh/candidatos', label: 'Candidatos', icon: '◉' },
     { to: '/rh/onboarding', label: 'Onboarding', icon: '⚑' },
-    { to: '/rh/sorteios', label: 'Sorteios', icon: '🎁' },
     { to: '/rh/usuarios', label: 'Usuários', icon: '◔' },
   ],
   dp: [
@@ -32,6 +31,7 @@ const GESTOR_NAV: NavItem[] = [
   { to: '/gestor/minhas-vagas', label: 'Minhas vagas', icon: '◱' },
   { to: '/gestor/nova', label: 'Abrir nova vaga', icon: '＋' },
   { to: '/gestor/candidatos', label: 'Candidatos', icon: '◉' },
+  { to: '/gestor/equipe', label: 'Meu time', icon: '⚐' },
 ]
 
 function initials(name?: string | null) {

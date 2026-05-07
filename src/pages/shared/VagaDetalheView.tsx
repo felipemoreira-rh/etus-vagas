@@ -2,6 +2,7 @@ import type { Vaga } from '../../types'
 import {
   EXP_LABEL,
   FORMACAO_LABEL,
+  getVagaEmpresas,
   JORNADA_LABEL,
   NIVEL_LABEL,
   REGIME_LABEL,
@@ -57,7 +58,7 @@ export default function VagaDetalheView({ vaga }: { vaga: Vaga }) {
       <div className="panel">
         <h3>Identificação</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-          <Info label="Empresa" value={vaga.empresa} />
+          <Info label="Empresas" value={getVagaEmpresas(vaga).join(' · ') || '—'} />
           <Info label="Cargo (divulgação)" value={vaga.cargo} />
           <Info label="Time / Área" value={vaga.time} />
           <Info label="Gestor" value={vaga.gestorNome} />

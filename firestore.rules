@@ -112,7 +112,19 @@ service cloud.firestore {
     match /colaboradores/{id} {
       allow read: if isRh() ||
                      (isGestor() && resource.data.gestorUid == request.auth.uid);
-      allow create, update, delete: if isRh();
+      allow create, delete: if isRh();
+      // Gestor pode atualizar APENAS o próprio time, e somente para
+      // registrar/encerrar suspensões temporárias de contrato (afastamento).
+      // Validamos com `affectedKeys` que ele só está mexendo em
+      // `suspensoes`, `status` e `updatedAt` — não pode mudar salário,
+      // cargo, empresa, gestorUid etc. RH continua podendo tudo.
+      allow update: if isRh() ||
+                       (isGestor() &&
+                        resource.data.gestorUid == request.auth.uid &&
+                        request.resource.data.gestorUid == resource.data.gestorUid &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly(['suspensoes', 'status', 'updatedAt']));
     }
 
     // Notificações: cada usuário só vê e marca como lida as próprias.
@@ -131,30 +143,5 @@ service cloud.firestore {
       allow delete: if isRh();
     }
 
-    // === Sorteios ===
-    // RH cria/gerencia. Qualquer pessoa autenticada lê (pra página pública
-    // funcionar). A criação/edição só é permitida pra RH — incluindo a
-    // gravação do vencedor após o sorteio.
-    match /sorteios/{sorteioId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isRh();
-
-      // Subcoleção de inscritos: cada usuário grava seu próprio doc
-      // usando o próprio uid como ID (garante unicidade de 1 inscrição
-      // por pessoa no nível de regra). Só é permitido criar se o sorteio
-      // existe e está em 'inscricoes_abertas'. RH lê tudo pra ver lista.
-      // Ninguém (nem RH) pode apagar ou alterar um inscrito depois de
-      // criado — evita manipular a lista antes do sorteio.
-      match /participantes/{uid} {
-        allow read: if isSignedIn() &&
-                       (request.auth.uid == uid || isRh());
-        allow create: if isSignedIn() &&
-                         request.auth.uid == uid &&
-                         request.resource.data.uid == uid &&
-                         get(/databases/$(database)/documents/sorteios/$(sorteioId))
-                           .data.status == 'inscricoes_abertas';
-        allow update, delete: if false;
-      }
-    }
   }
 }

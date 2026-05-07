@@ -9,7 +9,7 @@ import Topbar from '../../components/Topbar'
 import type {
   Candidato, Onboarding, OnboardingTipo, Regime, RegimeTrabalho, Vaga,
 } from '../../types'
-import { ONBOARDING_TIPO_LABEL, regimeToOnboardingTipo } from '../../types'
+import { getVagaEmpresas, ONBOARDING_TIPO_LABEL, regimeToOnboardingTipo } from '../../types'
 
 function regimeToTrabalho(r?: Regime): RegimeTrabalho {
   if (r === 'CLT') return 'clt'
@@ -97,7 +97,7 @@ export default function OnboardingDetalhe() {
       return Timestamp.fromDate(d)
     })()
 
-    const empresa = o.empresa || vaga?.empresa || ''
+    const empresa = o.empresa || (vaga ? getVagaEmpresas(vaga)[0] : '') || ''
     const gestorUid = vaga?.gestorUid || ''
     const gestorNome = vaga?.gestorNome || ''
 

@@ -12,6 +12,7 @@ import type {
 } from '../../types'
 import {
   CANDIDATO_FASE_LABEL, CANDIDATO_FASE_ORDER, CANDIDATO_ORIGEM_LABEL,
+  getVagaEmpresas,
 } from '../../types'
 
 function faseClass(f: CandidatoFase) {
@@ -227,7 +228,7 @@ function CandidatosGrupo({ vaga, candidatos, onExcluir }: {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>{vaga.cargo}</div>
           <div style={{ fontSize: 11, color: 'var(--mut)' }}>
-            {vaga.empresa ? `${vaga.empresa} · ` : ''}{vaga.time || 'sem time'}
+            {(() => { const empsTxt = getVagaEmpresas(vaga).join(' / '); return empsTxt ? `${empsTxt} · ` : '' })()}{vaga.time || 'sem time'}
             {vaga.id !== '__orfaos__' && ` · `}
             {vaga.id !== '__orfaos__' && (
               <Link to={`/rh/vagas/${vaga.id}`} onClick={(e) => e.stopPropagation()} style={{ color: 'var(--g600)' }}>
@@ -383,7 +384,7 @@ export function NovoCandidatoModal({ vagas, profileName, profileUid, onClose, va
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <h2>Novo candidato</h2>
         <p>{vagaFixaInfo
-          ? `Cadastrando em: ${vagaFixaInfo.cargo} · ${vagaFixaInfo.empresa}`
+          ? `Cadastrando em: ${vagaFixaInfo.cargo} · ${getVagaEmpresas(vagaFixaInfo).join(' / ') || '—'}`
           : 'Cadastre um candidato em uma vaga aberta.'}</p>
         <form onSubmit={handleSubmit} className="row-gap-14">
           {err && <div className="error-text">{err}</div>}
@@ -400,7 +401,7 @@ export function NovoCandidatoModal({ vagas, profileName, profileUid, onClose, va
             <div className="field">
               <label>Vaga *</label>
               <select value={vagaId} onChange={(e) => setVagaId(e.target.value)} required>
-                {vagas.map(v => <option key={v.id} value={v.id}>{v.cargo} · {v.time} · {v.empresa}</option>)}
+                {vagas.map(v => <option key={v.id} value={v.id}>{v.cargo} · {v.time} · {getVagaEmpresas(v).join(' / ') || '—'}</option>)}
               </select>
             </div>
           )}

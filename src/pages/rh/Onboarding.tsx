@@ -7,7 +7,7 @@ import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
 import type { Onboarding as OnboardingType, OnboardingItem, OnboardingTipo, Regime, Vaga } from '../../types'
 import {
-  EMPRESA_OPTIONS, ONBOARDING_CHECKLIST_TEMPLATES, ONBOARDING_TIPO_LABEL, regimeToOnboardingTipo,
+  EMPRESA_OPTIONS, getVagaEmpresas, ONBOARDING_CHECKLIST_TEMPLATES, ONBOARDING_TIPO_LABEL, regimeToOnboardingTipo,
 } from '../../types'
 
 type FilterTipo = OnboardingTipo | 'todos'
@@ -180,7 +180,7 @@ function NovoOnboardingModal({ vagas, onClose }: { vagas: Vaga[]; onClose: () =>
     const vaga = vagas.find(v => v.id === vagaId)
     if (vaga) {
       setTipo(regimeToOnboardingTipo(vaga.regime as Regime))
-      if (!empresa) setEmpresa(vaga.empresa || '')
+      if (!empresa) setEmpresa(getVagaEmpresas(vaga)[0] || '')
     }
   }, [vagaId, vagas, empresa])
 
@@ -204,7 +204,7 @@ function NovoOnboardingModal({ vagas, onClose }: { vagas: Vaga[]; onClose: () =>
         candidatoNome,
         vagaId,
         vagaCargo: vaga.cargo,
-        empresa: empresa || vaga.empresa,
+        empresa: empresa || getVagaEmpresas(vaga)[0] || '',
         tipo,
         regime: vaga.regime,
         dataPrevistaInicio: inicioTs,

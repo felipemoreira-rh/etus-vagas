@@ -14,7 +14,7 @@ import type {
   TempoExperiencia, UserProfile, Vaga, VagaMovimentacao, VagaStatus,
 } from '../../types'
 import {
-  CANDIDATO_FASE_LABEL, EMPRESA_OPTIONS, STATUS_LABELS, STATUS_ORDER,
+  CANDIDATO_FASE_LABEL, EMPRESA_OPTIONS, getVagaEmpresas, STATUS_LABELS, STATUS_ORDER,
 } from '../../types'
 
 function faseClass(f: CandidatoFase) {
@@ -152,7 +152,7 @@ export default function VagaDetalheRh() {
                   <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mut)', fontWeight: 700 }}>
                     Empresa
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{vaga.empresa}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{getVagaEmpresas(vaga).join(' · ') || '—'}</div>
                 </div>
                 <div>
                   <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--mut)', fontWeight: 700 }}>
@@ -272,7 +272,12 @@ function EditVagaModal({ vaga, onClose, onSaved }: {
   onClose: () => void
   onSaved: () => void
 }) {
-  const [empresa, setEmpresa] = useState(vaga.empresa)
+  // Multi-empresa: vaga pode estar em mais de uma empresa do grupo. Para
+  // docs antigos (só `empresa: string`), o helper devolve `[empresa]`.
+  const [empresas, setEmpresas] = useState<string[]>(getVagaEmpresas(vaga))
+  function toggleEmpresa(emp: string) {
+    setEmpresas(prev => prev.includes(emp) ? prev.filter(e => e !== emp) : [...prev, emp])
+  }
   const [cargo, setCargo] = useState(vaga.cargo)
   const [time, setTime] = useState(vaga.time)
   const [motivo, setMotivo] = useState<MotivoAbertura>(vaga.motivo)
@@ -315,6 +320,10 @@ function EditVagaModal({ vaga, onClose, onSaved }: {
   // já cadastrados.
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    if (empresas.length === 0) {
+      setErr('Selecione pelo menos uma empresa do grupo.')
+      return
+    }
     setSaving(true)
     setErr(null)
     try {
@@ -325,7 +334,11 @@ function EditVagaModal({ vaga, onClose, onSaved }: {
       const gestorChanged = (vaga.gestorUid || '') !== (gestorUid || '')
       const g = gestores.find(x => x.uid === gestorUid)
       const patch: Record<string, unknown> = {
-        empresa, cargo, time,
+        // Grava no novo formato (array) e também popula `empresa` (string
+        // legacy) com a primeira selecionada para compat com listagens.
+        empresas,
+        empresa: empresas[0],
+        cargo, time,
         motivo,
         substituidoNome: motivo === 'substituicao' ? substituidoNome : '',
         justificativaAumento: motivo === 'aumento' ? justificativaAumento : '',
@@ -376,15 +389,32 @@ function EditVagaModal({ vaga, onClose, onSaved }: {
           <div className="panel" style={{ padding: 12 }}>
             <h3 style={{ margin: '0 0 8px' }}>Identificação</h3>
             <div className="form-grid">
-              <div className="field">
-                <label>Empresa *</label>
-                <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} required>
-                  <option value="">— selecione —</option>
-                  {EMPRESA_OPTIONS.map(emp => <option key={emp} value={emp}>{emp}</option>)}
-                  {empresa && !(EMPRESA_OPTIONS as readonly string[]).includes(empresa) && (
-                    <option value={empresa}>{empresa} (legado)</option>
-                  )}
-                </select>
+              <div className="field full">
+                <label>Empresas * <span style={{ color: 'var(--mut)', fontWeight: 400, fontSize: 11 }}>(marque uma ou mais)</span></label>
+                <div className="checkbox-grid">
+                  {EMPRESA_OPTIONS.map(emp => (
+                    <label key={emp} className={'checkbox-option' + (empresas.includes(emp) ? ' selected' : '')}>
+                      <input
+                        type="checkbox"
+                        checked={empresas.includes(emp)}
+                        onChange={() => toggleEmpresa(emp)}
+                      />
+                      {emp}
+                    </label>
+                  ))}
+                  {/* Empresa legada que não está mais na lista oficial — 
+                      mantida marcada até o RH desmarcar manualmente. */}
+                  {empresas.filter(e => !(EMPRESA_OPTIONS as readonly string[]).includes(e)).map(emp => (
+                    <label key={emp} className="checkbox-option selected">
+                      <input
+                        type="checkbox"
+                        checked={true}
+                        onChange={() => toggleEmpresa(emp)}
+                      />
+                      {emp} (legado)
+                    </label>
+                  ))}
+                </div>
               </div>
               <div className="field">
                 <label>Cargo (divulgação) *</label>
