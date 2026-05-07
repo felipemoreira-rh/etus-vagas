@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import {
-  arrayUnion, collection, doc, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where,
+  addDoc, arrayUnion, collection, doc, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
-import type { Colaborador, Suspensao } from '../../types'
-import { REGIME_TRABALHO_LABEL, SUSPENSAO_TIPO_LABEL } from '../../types'
+import type { Colaborador, Desligamento, Suspensao } from '../../types'
+import { DESLIGAMENTO_TIPO_LABEL, PRESTADOR_STATUS_LABEL, REGIME_TRABALHO_LABEL, SUSPENSAO_TIPO_LABEL } from '../../types'
 
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
@@ -25,6 +25,7 @@ export default function GestorEquipe() {
   const [search, setSearch] = useState('')
   const [openSuspensao, setOpenSuspensao] = useState<Colaborador | null>(null)
   const [encerrando, setEncerrando] = useState<{ colab: Colaborador; suspensao: Suspensao } | null>(null)
+  const [desligando, setDesligando] = useState<Colaborador | null>(null)
 
   useEffect(() => {
     if (!profile?.uid) return
@@ -56,6 +57,7 @@ export default function GestorEquipe() {
   return (
     <>
       <Topbar title="Meu time" icon="◉" />
+      
       <div className="content">
         <div className="panel">
           <div className="filter-bar">
@@ -91,12 +93,16 @@ export default function GestorEquipe() {
                     <th>Regime</th>
                     <th>Admissão</th>
                     <th>Status</th>
-                    <th style={{ width: 200 }}>Suspensão de contrato</th>
+                    <th style={{ width: 260 }}>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map(c => {
                     const ativa = suspensaoAtiva(c)
+                    const statusBdg = c.status === 'ativo' ? 'ok'
+                      : c.status === 'ferias' || c.status === 'contrato_suspenso' ? 'warn'
+                      : c.status === 'afastado' ? 'info' : 'bad'
+                    const aguardandoDesligamento = !!c.desligamentoSolicitadoId
                     return (
                       <tr key={c.id}>
                         <td>
@@ -108,42 +114,50 @@ export default function GestorEquipe() {
                         <td style={{ fontSize: 12 }}>{REGIME_TRABALHO_LABEL[c.regime]}</td>
                         <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(c.dataAdmissao)}</td>
                         <td>
-                          <span className={`bdg ${
-                            c.status === 'ativo' ? 'ok' :
-                            c.status === 'ferias' ? 'warn' :
-                            c.status === 'afastado' ? 'info' : 'bad'
-                          }`}>
-                            {c.status === 'ativo' ? 'Ativo' :
-                             c.status === 'ferias' ? 'Férias' :
-                             c.status === 'afastado' ? 'Afastado' : 'Desligado'}
-                          </span>
+                          <span className={`bdg ${statusBdg}`}>{PRESTADOR_STATUS_LABEL[c.status]}</span>
+                          {aguardandoDesligamento && (
+                            <div style={{ fontSize: 10, color: 'var(--warn)', marginTop: 3 }}>
+                              Desligamento em análise pelo RH
+                            </div>
+                          )}
                         </td>
                         <td>
-                          {ativa ? (
-                            <div className="vstack" style={{ gap: 4 }}>
-                              <div style={{ fontSize: 11, color: 'var(--info, #2563eb)', fontWeight: 600 }}>
-                                Suspenso desde {formatDate(ativa.inicio)}
-                              </div>
+                          <div className="vstack" style={{ gap: 4 }}>
+                            {ativa ? (
+                              <>
+                                <div style={{ fontSize: 11, color: 'var(--info, #2563eb)', fontWeight: 600 }}>
+                                  Suspenso desde {formatDate(ativa.inicio)}
+                                </div>
+                                <button
+                                  type="button"
+                                  className="tbtn"
+                                  style={{ height: 26 }}
+                                  onClick={() => setEncerrando({ colab: c, suspensao: ativa })}
+                                >
+                                  Encerrar suspensão
+                                </button>
+                              </>
+                            ) : (
                               <button
                                 type="button"
                                 className="tbtn"
                                 style={{ height: 26 }}
-                                onClick={() => setEncerrando({ colab: c, suspensao: ativa })}
+                                onClick={() => setOpenSuspensao(c)}
+                                disabled={c.status === 'desligado'}
                               >
-                                Encerrar suspensão
+                                Solicitar suspensão
                               </button>
-                            </div>
-                          ) : (
+                            )}
                             <button
                               type="button"
                               className="tbtn"
-                              style={{ height: 26 }}
-                              onClick={() => setOpenSuspensao(c)}
-                              disabled={c.status === 'desligado'}
+                              style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                              onClick={() => setDesligando(c)}
+                              disabled={c.status === 'desligado' || aguardandoDesligamento}
                             >
-                              Solicitar suspensão
+                              Solicitar desligamento
                             </button>
-                          )}
+                          </div>
                         </td>
                       </tr>
                     )
@@ -175,7 +189,108 @@ export default function GestorEquipe() {
           onClose={() => setEncerrando(null)}
         />
       )}
+      {desligando && profile && (
+        <SolicitarDesligamentoModal
+          colaborador={desligando}
+          profileUid={profile.uid}
+          profileName={profile.name || profile.email || ''}
+          onClose={() => setDesligando(null)}
+        />
+      )}
     </>
+  )
+}
+
+function SolicitarDesligamentoModal({ colaborador, profileUid, profileName, onClose }: {
+  colaborador: Colaborador
+  profileUid: string
+  profileName: string
+  onClose: () => void
+}) {
+  const [tipo, setTipo] = useState<Desligamento['tipo']>('voluntario')
+  const [motivo, setMotivo] = useState('')
+  const [dataPrevista, setDataPrevista] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 30)
+    return d.toISOString().slice(0, 10)
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!motivo.trim()) { setErr('Informe o motivo do desligamento.'); return }
+    setSaving(true); setErr(null)
+    try {
+      const dataTs = Timestamp.fromDate(new Date(dataPrevista + 'T00:00:00'))
+      const novo = {
+        colaboradorId: colaborador.id,
+        colaboradorNome: colaborador.nome,
+        empresa: colaborador.empresa,
+        cargo: colaborador.cargo,
+        motivo: motivo.trim(),
+        tipo,
+        dataPrevista: dataTs,
+        solicitanteUid: profileUid,
+        solicitanteNome: profileName,
+        status: 'pendente' as const,
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      }
+      const ref = await addDoc(collection(db, 'desligamentos'), novo)
+      // marca o prestador como aguardando desligamento
+      await updateDoc(doc(db, 'colaboradores', colaborador.id), {
+        desligamentoSolicitadoId: ref.id,
+        updatedAt: serverTimestamp(),
+      })
+      onClose()
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Erro ao solicitar desligamento.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Solicitar desligamento</h2>
+        <p>
+          Solicitar desligamento de <b>{colaborador.nome}</b>. O RH vai analisar e concluir.
+          Você pode acompanhar o status em "Meu time" (badge vermelha) e será notificado quando concluir.
+        </p>
+        <form onSubmit={handleSubmit} className="row-gap-14">
+          {err && <div className="error-text">{err}</div>}
+          <div className="form-grid">
+            <div className="field">
+              <label>Tipo *</label>
+              <select value={tipo} onChange={(e) => setTipo(e.target.value as Desligamento['tipo'])}>
+                {Object.entries(DESLIGAMENTO_TIPO_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Data prevista *</label>
+              <input type="date" value={dataPrevista} onChange={(e) => setDataPrevista(e.target.value)} required />
+            </div>
+            <div className="field full">
+              <label>Motivo / contexto *</label>
+              <textarea
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Ex.: Pediu demissão, já conversado em 1:1; último dia em 30/05."
+                required
+                rows={4}
+              />
+            </div>
+          </div>
+          <div className="hstack" style={{ justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={saving} style={{ background: 'var(--bad)' }}>
+              {saving ? 'Solicitando…' : 'Solicitar desligamento'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 

@@ -1,11 +1,46 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { collection, onSnapshot, query, Timestamp } from 'firebase/firestore'
+import {
+  addDoc, collection, onSnapshot, query, serverTimestamp, Timestamp, where,
+} from 'firebase/firestore'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
 import KpiCard from '../../components/KpiCard'
 import type { Colaborador, Estagiario } from '../../types'
+
+// Cria notificações de aniversário para todos os usuários RH no dia certo,
+// com debounce diário via localStorage para evitar duplicatas se vários
+// usuários abrirem o dashboard.
+async function disparaNotifAniversario(c: Colaborador) {
+  if (!c.dataNascimento) return
+  const hoje = new Date()
+  const aniv = c.dataNascimento.toDate()
+  if (aniv.getDate() !== hoje.getDate() || aniv.getMonth() !== hoje.getMonth()) return
+  const key = `notif-aniv-${c.id}-${hoje.toISOString().slice(0, 10)}`
+  if (localStorage.getItem(key)) return
+  try {
+    // Busca usuários RH para destinatários.
+    const { getDocs } = await import('firebase/firestore')
+    const snap = await getDocs(query(collection(db, 'users'), where('role', '==', 'rh')))
+    for (const u of snap.docs) {
+      await addDoc(collection(db, 'notificacoes'), {
+        destinatarioUid: u.id,
+        tipo: 'onboarding_concluido',
+        titulo: `🎂 Hoje é aniversário de ${c.nome}`,
+        mensagem: `${c.nome} (${c.cargo} · ${c.empresa}) faz aniversário hoje. Lembre de parabenizar!`,
+        link: `/dp/colaboradores/${c.id}`,
+        lida: false,
+        createdAt: serverTimestamp(),
+        refColecao: 'colaboradores',
+        refId: c.id,
+      })
+    }
+    localStorage.setItem(key, '1')
+  } catch {
+    // best-effort — ignora falhas pra não travar o dashboard
+  }
+}
 
 const COLORS = ['#066E3E', '#3BE476', '#8DF768', '#F0EE7A', '#A0E3F3', '#F5B3D8']
 
@@ -54,7 +89,10 @@ export default function DpDashboard() {
       setLoading(false)
     }, () => setLoading(false))
     const u2 = onSnapshot(query(collection(db, 'colaboradores')), (s) => {
-      setColaboradores(s.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Colaborador, 'id'>) })))
+      const list = s.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Colaborador, 'id'>) }))
+      setColaboradores(list)
+      // dispara notificações de aniversário (best-effort, deduplica via localStorage)
+      list.filter(c => c.status !== 'desligado').forEach(c => { void disparaNotifAniversario(c) })
     })
     return () => { u1(); u2() }
   }, [])
@@ -69,6 +107,33 @@ export default function DpDashboard() {
     }).length
     return { estAtivos, colAtivos, colFerias, expPend, totalEst: estagiarios.length, totalCol: colaboradores.length }
   }, [estagiarios, colaboradores])
+
+  // Aniversariantes do mês (incluindo o próprio dia de hoje em destaque).
+  const aniversariantes = useMemo(() => {
+    const hoje = new Date()
+    const mesAtual = hoje.getMonth()
+    return colaboradores
+      .filter(c => c.status !== 'desligado' && c.dataNascimento)
+      .map(c => ({ c, d: c.dataNascimento!.toDate() }))
+      .filter(({ d }) => d.getMonth() === mesAtual)
+      .sort((a, b) => a.d.getDate() - b.d.getDate())
+  }, [colaboradores])
+
+  // Indicações ativas (em janela de 90 dias, ainda não liberadas).
+  const indicacoesAtivas = useMemo(() => {
+    const hoje = new Date()
+    return colaboradores.filter(c => {
+      if (!c.indicadoPorNome || !c.dataAdmissao) return false
+      const limite = c.dataAdmissao.toDate()
+      limite.setDate(limite.getDate() + 90)
+      return limite > hoje
+    })
+  }, [colaboradores])
+
+  // Suspensões de contrato ativas (qualquer prestador com pelo menos uma).
+  const suspensoesAtivas = useMemo(() => {
+    return colaboradores.filter(c => (c.suspensoes || []).some(s => s.status === 'ativa'))
+  }, [colaboradores])
 
   const colByArea = useMemo(() => {
     const map = new Map<string, number>()
@@ -110,7 +175,7 @@ export default function DpDashboard() {
         {loading && <div className="empty-state">Carregando…</div>}
 
         <div className="krow k4">
-          <KpiCard label="Colaboradores ativos" value={kpis.colAtivos} icon="◉" tone="g" meta={`Total: ${kpis.totalCol}`} />
+          <KpiCard label="Prestadores ativos" value={kpis.colAtivos} icon="◉" tone="g" meta={`Total: ${kpis.totalCol}`} />
           <KpiCard label="Estagiários ativos" value={kpis.estAtivos} icon="◱" tone="b" meta={`Total: ${kpis.totalEst}`} />
           <KpiCard label="Em férias" value={kpis.colFerias} icon="☀" tone="a" />
           <KpiCard
@@ -120,6 +185,12 @@ export default function DpDashboard() {
             tone={alerta30d.length > 0 ? 'r' : 'g'}
             meta="Estágios"
           />
+        </div>
+
+        <div className="krow k3">
+          <CardAniversariantes lista={aniversariantes} />
+          <CardIndicacoes lista={indicacoesAtivas} />
+          <CardSuspensoes lista={suspensoesAtivas} />
         </div>
 
         <div className="panel">
@@ -226,5 +297,139 @@ export default function DpDashboard() {
         </div>
       </div>
     </>
+  )
+}
+
+// ─────────── Cards extras: aniversariantes, indicações, suspensões ───────────
+function CardAniversariantes({ lista }: { lista: { c: Colaborador; d: Date }[] }) {
+  const hoje = new Date()
+  const hojeAniv = lista.filter(({ d }) => d.getDate() === hoje.getDate())
+  return (
+    <div className="panel">
+      <div className="ph">
+        <div className="pt"><span className="pdot" style={{ background: '#f59e0b' }} />🎂 Aniversariantes do mês</div>
+        {hojeAniv.length > 0 && (
+          <div style={{ fontSize: 11, color: 'var(--g600)', fontWeight: 700 }}>
+            {hojeAniv.length} hoje
+          </div>
+        )}
+      </div>
+      {lista.length === 0 ? (
+        <div className="empty-sub" style={{ padding: 8 }}>Nenhum aniversariante este mês.</div>
+      ) : (
+        <div className="panel-scroll" style={{ maxHeight: 220, overflowY: 'auto' }}>
+          {lista.map(({ c, d }) => {
+            const isHoje = d.getDate() === hoje.getDate()
+            return (
+              <Link
+                key={c.id}
+                to={`/dp/colaboradores/${c.id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '6px 0', textDecoration: 'none', color: 'var(--fg)',
+                  fontSize: 12,
+                }}
+              >
+                <span style={{
+                  background: isHoje ? '#f59e0b' : 'var(--card2)',
+                  color: isHoje ? '#fff' : 'var(--mut)',
+                  borderRadius: 6, padding: '3px 6px', fontWeight: 700, minWidth: 30, textAlign: 'center',
+                }}>
+                  {String(d.getDate()).padStart(2, '0')}
+                </span>
+                <span style={{ flex: 1 }}>{c.nome}</span>
+                <span style={{ fontSize: 10, color: 'var(--mut)' }}>{c.empresa}</span>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CardIndicacoes({ lista }: { lista: Colaborador[] }) {
+  return (
+    <div className="panel">
+      <div className="ph">
+        <div className="pt"><span className="pdot" style={{ background: 'var(--g600)' }} />★ Indicações em curso</div>
+        <Link to="/dp/indicacoes" style={{ fontSize: 11, color: 'var(--g600)' }}>Ver todas →</Link>
+      </div>
+      {lista.length === 0 ? (
+        <div className="empty-sub" style={{ padding: 8 }}>Nenhuma indicação em janela de 90 dias.</div>
+      ) : (
+        <div className="panel-scroll" style={{ maxHeight: 220, overflowY: 'auto' }}>
+          {lista.slice(0, 8).map(c => {
+            let dias = 0
+            if (c.dataAdmissao) {
+              const limite = c.dataAdmissao.toDate()
+              limite.setDate(limite.getDate() + 90)
+              dias = Math.ceil((limite.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+            }
+            return (
+              <Link
+                key={c.id}
+                to={`/dp/colaboradores/${c.id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '6px 0', textDecoration: 'none', color: 'var(--fg)',
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ flex: 1 }}>
+                  {c.nome}
+                  <div style={{ fontSize: 10, color: 'var(--mut)' }}>por {c.indicadoPorNome}</div>
+                </span>
+                <span style={{
+                  fontSize: 11, fontWeight: 700,
+                  color: dias <= 15 ? 'var(--warn)' : 'var(--mut)',
+                }}>
+                  {dias}d
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CardSuspensoes({ lista }: { lista: Colaborador[] }) {
+  return (
+    <div className="panel">
+      <div className="ph">
+        <div className="pt"><span className="pdot" style={{ background: '#2563eb' }} />⏸ Suspensões ativas</div>
+        <Link to="/dp/suspensoes" style={{ fontSize: 11, color: 'var(--g600)' }}>Ver histórico →</Link>
+      </div>
+      {lista.length === 0 ? (
+        <div className="empty-sub" style={{ padding: 8 }}>Nenhuma suspensão em curso.</div>
+      ) : (
+        <div className="panel-scroll" style={{ maxHeight: 220, overflowY: 'auto' }}>
+          {lista.slice(0, 8).map(c => {
+            const ativa = (c.suspensoes || []).find(s => s.status === 'ativa')
+            return (
+              <Link
+                key={c.id}
+                to={`/dp/colaboradores/${c.id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '6px 0', textDecoration: 'none', color: 'var(--fg)',
+                  fontSize: 12,
+                }}
+              >
+                <span style={{ flex: 1 }}>
+                  {c.nome}
+                  <div style={{ fontSize: 10, color: 'var(--mut)' }}>{c.empresa}</div>
+                </span>
+                <span style={{ fontSize: 10, color: 'var(--mut)' }}>
+                  desde {fmtDate(ativa?.inicio)}
+                </span>
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }

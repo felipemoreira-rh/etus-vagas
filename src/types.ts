@@ -452,7 +452,10 @@ export interface Estagiario {
   updatedAt: Timestamp
 }
 
-// ═════════════════════════ DP — COLABORADORES ═════════════════════════
+// ═════════════════════════ DP — PRESTADORES (a.k.a. Colaboradores legacy) ═════════════════════════
+// Internamente a coleção continua sendo `colaboradores` (Firestore) pra
+// não quebrar dados/regras antigas, mas a UI usa "Prestador" — a empresa
+// contrata via PJ e quer evitar nomenclatura que sugira vínculo CLT.
 export type RegimeTrabalho = 'clt' | 'pj' | 'estagio' | 'freelancer'
 
 export const REGIME_TRABALHO_LABEL: Record<RegimeTrabalho, string> = {
@@ -462,12 +465,276 @@ export const REGIME_TRABALHO_LABEL: Record<RegimeTrabalho, string> = {
   freelancer: 'Freelancer',
 }
 
+// ── Status do prestador ──────────────────────────────────────────────
+// 'contrato_suspenso' foi adicionado em 2026-05; substitui semanticamente
+// "férias" para PJ/freelance (mas mantemos 'ferias' aqui pra compat com
+// docs legados de CLT/estágio).
+export type PrestadorStatus = 'ativo' | 'ferias' | 'contrato_suspenso' | 'afastado' | 'desligado'
+
+export const PRESTADOR_STATUS_LABEL: Record<PrestadorStatus, string> = {
+  ativo: 'Ativo',
+  ferias: 'Férias',
+  contrato_suspenso: 'Contrato suspenso',
+  afastado: 'Afastado',
+  desligado: 'Desligado',
+}
+
+// ── Demográficos ─────────────────────────────────────────────────────
+export type Genero =
+  | 'mulher_cis'
+  | 'mulher_trans'
+  | 'homem_cis'
+  | 'homem_trans'
+  | 'nao_binario'
+  | 'travesti'
+  | 'outro'
+  | 'prefiro_nao_dizer'
+
+export const GENERO_LABEL: Record<Genero, string> = {
+  mulher_cis: 'Mulher cis',
+  mulher_trans: 'Mulher trans',
+  homem_cis: 'Homem cis',
+  homem_trans: 'Homem trans',
+  nao_binario: 'Não-binário',
+  travesti: 'Travesti',
+  outro: 'Outro',
+  prefiro_nao_dizer: 'Prefiro não dizer',
+}
+
+export type RacaCor = 'branca' | 'preta' | 'parda' | 'amarela' | 'indigena' | 'prefiro_nao_dizer'
+
+export const RACA_LABEL: Record<RacaCor, string> = {
+  branca: 'Branca',
+  preta: 'Preta',
+  parda: 'Parda',
+  amarela: 'Amarela',
+  indigena: 'Indígena',
+  prefiro_nao_dizer: 'Prefiro não dizer',
+}
+
+export type EstadoCivil =
+  | 'solteiro'
+  | 'casado'
+  | 'uniao_estavel'
+  | 'divorciado'
+  | 'viuvo'
+  | 'separado'
+
+export const ESTADO_CIVIL_LABEL: Record<EstadoCivil, string> = {
+  solteiro: 'Solteiro(a)',
+  casado: 'Casado(a)',
+  uniao_estavel: 'União estável',
+  divorciado: 'Divorciado(a)',
+  viuvo: 'Viúvo(a)',
+  separado: 'Separado(a)',
+}
+
+export type TipoUniao = 'comunhao_parcial' | 'comunhao_universal' | 'separacao_total' | 'final_aquestos' | 'nao_se_aplica'
+
+export const TIPO_UNIAO_LABEL: Record<TipoUniao, string> = {
+  comunhao_parcial: 'Comunhão parcial de bens',
+  comunhao_universal: 'Comunhão universal de bens',
+  separacao_total: 'Separação total de bens',
+  final_aquestos: 'Participação final nos aquestos',
+  nao_se_aplica: 'Não se aplica',
+}
+
+// ── Dados bancários e pagamento ──────────────────────────────────────
+export type ContaBancariaTipo = 'corrente' | 'poupanca' | 'pagamentos' | 'salario'
+
+export const CONTA_TIPO_LABEL: Record<ContaBancariaTipo, string> = {
+  corrente: 'Conta Corrente',
+  poupanca: 'Conta Poupança',
+  pagamentos: 'Conta de Pagamentos',
+  salario: 'Conta Salário',
+}
+
+export type ChavePixTipo = 'cpf' | 'cnpj' | 'email' | 'telefone' | 'aleatoria'
+
+export const PIX_TIPO_LABEL: Record<ChavePixTipo, string> = {
+  cpf: 'CPF',
+  cnpj: 'CNPJ',
+  email: 'E-mail',
+  telefone: 'Telefone',
+  aleatoria: 'Chave aleatória',
+}
+
+export type TipoPagamento = 'transferencia' | 'pix' | 'boleto' | 'deposito'
+
+export const TIPO_PAGAMENTO_LABEL: Record<TipoPagamento, string> = {
+  transferencia: 'Transferência (TED/DOC)',
+  pix: 'PIX',
+  boleto: 'Boleto',
+  deposito: 'Depósito',
+}
+
+export interface DadosBancarios {
+  banco?: string
+  agencia?: string
+  conta?: string
+  tipoConta?: ContaBancariaTipo
+  chavePixTipo?: ChavePixTipo
+  chavePixValor?: string
+  /** Como a empresa paga este prestador. */
+  tipoPagamento?: TipoPagamento
+}
+
+// ── Endereço ─────────────────────────────────────────────────────────
+export interface Endereco {
+  cep?: string
+  logradouro?: string
+  numero?: string
+  complemento?: string
+  bairro?: string
+  cidade?: string
+  uf?: string
+  pais?: string
+}
+
+// ── Família ──────────────────────────────────────────────────────────
+export interface Filho {
+  id: string
+  nome: string
+  dataNascimento?: Timestamp
+}
+
+export interface Familia {
+  nomePai?: string
+  nomeMae?: string
+  estadoCivil?: EstadoCivil
+  tipoUniao?: TipoUniao
+  nomeConjuge?: string
+  possuiFilhos?: boolean
+  filhos?: Filho[]
+}
+
+// ── Contato de emergência ────────────────────────────────────────────
+export interface ContatoEmergencia {
+  nome?: string
+  parentesco?: string
+  telefone?: string
+}
+
+// ── Escolaridade e idiomas ───────────────────────────────────────────
+export type NivelIdioma = 'basico' | 'intermediario' | 'avancado' | 'fluente' | 'nativo'
+
+export const NIVEL_IDIOMA_LABEL: Record<NivelIdioma, string> = {
+  basico: 'Básico',
+  intermediario: 'Intermediário',
+  avancado: 'Avançado',
+  fluente: 'Fluente',
+  nativo: 'Nativo',
+}
+
+export interface FormacaoEducacional {
+  id: string
+  nivel: Formacao
+  curso?: string
+  instituicao?: string
+  anoConclusao?: number
+  emAndamento?: boolean
+}
+
+export interface IdiomaFalado {
+  id: string
+  idioma: string
+  nivel: NivelIdioma
+}
+
+// ── Históricos imutáveis ─────────────────────────────────────────────
+// Entradas só podem ser ADICIONADAS — nunca apagadas/editadas.
+// Garantido por regras Firestore (verifica que o array só pode crescer
+// e que entradas existentes não mudam).
+export interface HistoricoCargoEntry {
+  id: string
+  cargoAnterior?: string
+  cargoNovo: string
+  motivo?: string
+  vigenciaEm: Timestamp
+  registradoEm: Timestamp
+  registradoPorUid: string
+  registradoPorNome: string
+}
+
+export interface HistoricoSalarioEntry {
+  id: string
+  salarioAnterior?: number
+  salarioNovo: number
+  motivo?: string
+  vigenciaEm: Timestamp
+  registradoEm: Timestamp
+  registradoPorUid: string
+  registradoPorNome: string
+}
+
+// ── Documentos digitalizados ─────────────────────────────────────────
+export interface DocumentoDigitalizado {
+  id: string
+  tipo: string // ex.: 'RG', 'CPF', 'CNPJ', 'Contrato', 'Comprovante de residência'
+  nome: string
+  url: string
+  path: string
+  uploadedAt: Timestamp
+  uploadedByUid: string
+  uploadedByName: string
+  tamanho?: number
+}
+
+// ── Solicitação de desligamento ──────────────────────────────────────
+// Gestor solicita; RH aprova/encerra. Mantida em coleção própria
+// `desligamentos` para histórico/auditoria.
+export interface Desligamento {
+  id: string
+  colaboradorId: string
+  colaboradorNome: string
+  empresa: string
+  cargo: string
+
+  /** Motivo informado pelo gestor (texto livre). */
+  motivo: string
+  /** Tipo de desligamento. */
+  tipo: 'voluntario' | 'sem_justa_causa' | 'com_justa_causa' | 'fim_contrato' | 'outro'
+
+  /** Data prevista para o desligamento (informada pelo gestor). */
+  dataPrevista: Timestamp
+
+  /** Solicitante (gestor) e responsável (RH que aprova). */
+  solicitanteUid: string
+  solicitanteNome: string
+
+  status: 'pendente' | 'aprovado' | 'concluido' | 'cancelado'
+  aprovadoPorUid?: string
+  aprovadoPorNome?: string
+  aprovadoEm?: Timestamp
+
+  /** Data efetiva quando o RH conclui. */
+  dataEfetiva?: Timestamp
+  observacoesRh?: string
+
+  criadoEm: Timestamp
+  atualizadoEm: Timestamp
+}
+
+export const DESLIGAMENTO_TIPO_LABEL: Record<Desligamento['tipo'], string> = {
+  voluntario: 'Voluntário (pedido do prestador)',
+  sem_justa_causa: 'Sem justa causa',
+  com_justa_causa: 'Com justa causa',
+  fim_contrato: 'Fim de contrato',
+  outro: 'Outro',
+}
+
 export interface Colaborador {
   id: string
   nome: string
   email?: string
+  emailCorporativo?: string
   telefone?: string
   cpf?: string
+  rg?: string
+  /** PJ ou freelance — nome da empresa do prestador (CNPJ). */
+  nomeEmpresaPrestador?: string
+  /** PJ ou freelance — CNPJ do prestador. */
+  cnpj?: string
   cargo: string
   area: string
   empresa: string
@@ -477,7 +744,42 @@ export interface Colaborador {
   salario?: number
   gestorUid?: string
   gestorNome?: string
-  status: 'ativo' | 'ferias' | 'afastado' | 'desligado'
+  /** Superior imediato (pode ser igual ao gestor da vaga ou outro). */
+  superiorUid?: string
+  superiorNome?: string
+  status: PrestadorStatus
+
+  // Demográficos / pessoais
+  dataNascimento?: Timestamp
+  genero?: Genero
+  generoOutro?: string
+  raca?: RacaCor
+  nacionalidade?: string
+  naturalidade?: string // cidade-UF
+  pcd?: boolean
+  pcdDescricao?: string
+
+  // Foto de perfil (URL pública no Storage)
+  fotoUrl?: string
+  fotoPath?: string
+
+  // Endereço, contato emergência, dados bancários, família
+  endereco?: Endereco
+  contatoEmergencia?: ContatoEmergencia
+  dadosBancarios?: DadosBancarios
+  familia?: Familia
+
+  // Educação
+  escolaridade?: FormacaoEducacional[]
+  idiomas?: IdiomaFalado[]
+
+  // Documentos digitalizados (uploads)
+  documentos?: DocumentoDigitalizado[]
+
+  // Históricos imutáveis (só append)
+  historicoCargo?: HistoricoCargoEntry[]
+  historicoSalario?: HistoricoSalarioEntry[]
+
   experiencia?: {
     inicio: Timestamp
     fim45?: Timestamp
@@ -500,6 +802,8 @@ export interface Colaborador {
   // doença, maternidade, licença não-remunerada etc.). O gestor solicita
   // direto pelo app e o RH vê no histórico — sem aprovação formal.
   suspensoes?: Suspensao[]
+  /** Solicitação de desligamento ATIVA (referência ao doc em `desligamentos`). */
+  desligamentoSolicitadoId?: string
   createdAt: Timestamp
   updatedAt: Timestamp
 }

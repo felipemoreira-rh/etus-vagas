@@ -21,7 +21,11 @@ import RhUsuarios from './pages/rh/Usuarios'
 import DpDashboard from './pages/dp/Dashboard'
 import DpEstagiarios from './pages/dp/Estagiarios'
 import DpColaboradores from './pages/dp/Colaboradores'
+import DpPrestadorDetalhe from './pages/dp/PrestadorDetalhe'
 import DpPeriodoExperiencia from './pages/dp/PeriodoExperiencia'
+import DpIndicacoes from './pages/dp/Indicacoes'
+import DpSuspensoes from './pages/dp/Suspensoes'
+import DpDesligamentos from './pages/dp/Desligamentos'
 
 // Gestor
 import GestorMinhasVagas from './pages/gestor/MinhasVagas'
@@ -77,7 +81,11 @@ export default function App() {
         <Route path="/dp/dashboard" element={<RhRoute><DpDashboard /></RhRoute>} />
         <Route path="/dp/estagiarios" element={<RhRoute><DpEstagiarios /></RhRoute>} />
         <Route path="/dp/colaboradores" element={<RhRoute><DpColaboradores /></RhRoute>} />
+        <Route path="/dp/colaboradores/:id" element={<RhRoute><DpPrestadorDetalhe /></RhRoute>} />
         <Route path="/dp/periodo-experiencia" element={<RhRoute><DpPeriodoExperiencia /></RhRoute>} />
+        <Route path="/dp/indicacoes" element={<RhRoute><DpIndicacoes /></RhRoute>} />
+        <Route path="/dp/suspensoes" element={<RhRoute><DpSuspensoes /></RhRoute>} />
+        <Route path="/dp/desligamentos" element={<RhRoute><DpDesligamentos /></RhRoute>} />
 
         {/* Gestor */}
         <Route path="/gestor" element={<Navigate to="/gestor/minhas-vagas" replace />} />

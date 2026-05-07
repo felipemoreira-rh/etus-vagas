@@ -22,8 +22,11 @@ const NAV: Record<ModuleKey, NavItem[]> = {
   dp: [
     { to: '/dp/dashboard', label: 'Dashboard DP', icon: '◈' },
     { to: '/dp/estagiarios', label: 'Estagiários', icon: '◱' },
-    { to: '/dp/colaboradores', label: 'Colaboradores', icon: '◉' },
+    { to: '/dp/colaboradores', label: 'Prestadores', icon: '◉' },
     { to: '/dp/periodo-experiencia', label: 'Período de Experiência', icon: '⧗' },
+    { to: '/dp/indicacoes', label: 'Indicações', icon: '★' },
+    { to: '/dp/suspensoes', label: 'Histórico de Suspensões', icon: '⏸' },
+    { to: '/dp/desligamentos', label: 'Desligamentos', icon: '⤬' },
   ],
 }
 

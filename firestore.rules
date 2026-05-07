@@ -114,17 +114,34 @@ service cloud.firestore {
                      (isGestor() && resource.data.gestorUid == request.auth.uid);
       allow create, delete: if isRh();
       // Gestor pode atualizar APENAS o próprio time, e somente para
-      // registrar/encerrar suspensões temporárias de contrato (afastamento).
-      // Validamos com `affectedKeys` que ele só está mexendo em
-      // `suspensoes`, `status` e `updatedAt` — não pode mudar salário,
-      // cargo, empresa, gestorUid etc. RH continua podendo tudo.
+      // registrar/encerrar suspensões temporárias de contrato (afastamento)
+      // ou marcar pedido de desligamento (`desligamentoSolicitadoId`).
+      // Validamos com `affectedKeys` que ele só está mexendo em campos
+      // permitidos — não pode mudar salário, cargo, empresa etc.
+      // RH continua podendo tudo.
       allow update: if isRh() ||
                        (isGestor() &&
                         resource.data.gestorUid == request.auth.uid &&
                         request.resource.data.gestorUid == resource.data.gestorUid &&
                         request.resource.data.diff(resource.data)
                           .affectedKeys()
-                          .hasOnly(['suspensoes', 'status', 'updatedAt']));
+                          .hasOnly(['suspensoes', 'status', 'updatedAt', 'desligamentoSolicitadoId']));
+    }
+
+    // Desligamentos: gestor cria pedido para alguém do seu time;
+    // RH lê tudo, aprova, conclui ou cancela. Gestor lê só os próprios
+    // pedidos (solicitanteUid).
+    match /desligamentos/{id} {
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.solicitanteUid == request.auth.uid);
+      allow create: if isRh() ||
+                       (isGestor() &&
+                        request.resource.data.solicitanteUid == request.auth.uid &&
+                        request.resource.data.status == 'pendente' &&
+                        // Verifica que o gestor é dono do prestador.
+                        get(/databases/$(database)/documents/colaboradores/$(request.resource.data.colaboradorId)).data.gestorUid == request.auth.uid);
+      // Só RH atualiza/exclui (aprova, conclui, cancela).
+      allow update, delete: if isRh();
     }
 
     // Notificações: cada usuário só vê e marca como lida as próprias.
