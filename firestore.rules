@@ -1,9 +1,13 @@
 rules_version = '2';
 
 // Regras de segurança do Firestore para o sistema ETUS Vagas.
-// Modelo:
-//   - users/{uid}: perfil do usuário (role: "rh" | "gestor").
-//   - vagas/{id}:  vagas abertas pelos gestores.
+// Modelo (2 módulos integrados):
+//   - users/{uid}:              perfil do usuário (role: "rh" | "gestor").
+//   - vagas/{id}:               vagas abertas pelos gestores (módulo RH).
+//   - candidatos/{id}:          candidatos em processo seletivo (módulo RH).
+//   - onboarding/{id}:          checklist de integração de novos contratados (módulo RH).
+//   - estagiarios/{id}:         estagiários ativos/finalizados (módulo DP).
+//   - colaboradores/{id}:       colaboradores e período de experiência (módulo DP).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -24,45 +28,133 @@ service cloud.firestore {
       return isSignedIn() && myRole() == 'gestor';
     }
 
+    function isBlocked(uid) {
+      return exists(/databases/$(database)/documents/blocked_users/$(uid));
+    }
+
     match /users/{uid} {
-      // Qualquer usuário autenticado pode ler a lista de usuários (necessário p/
-      // dashboards e gestão de acesso pelo RH).
       allow read: if isSignedIn();
-
-      // Cadastro: o próprio usuário cria seu documento ao se registrar.
-      allow create: if isSignedIn() && request.auth.uid == uid;
-
-      // Atualização: o próprio usuário pode editar campos básicos;
-      // apenas o RH pode alterar `role`.
+      // Cria o próprio doc só se NÃO estiver na lista de bloqueados. Isso
+      // fecha o bypass onde um usuário cujo acesso foi revogado (doc users
+      // deletado) podia abrir o devtools e dar `setDoc('users/{meu_uid}',
+      // { role: 'rh', ... })` pra reconquistar acesso — a checagem
+      // `blocked_users` no AuthContext é só UX; o enforce real é aqui.
+      allow create: if isSignedIn() && request.auth.uid == uid &&
+                       !isBlocked(uid);
       allow update: if isSignedIn() && (
         (request.auth.uid == uid &&
           request.resource.data.role == resource.data.role) ||
         isRh()
       );
-
       allow delete: if isRh();
     }
 
+    // Usuários cujo acesso foi revogado pelo RH (fluxo "Remover acesso" na
+    // tela Usuários). A presença de `blocked_users/{uid}` impede que o
+    // AuthContext re-crie o doc `users/{uid}` no próximo login via Google.
+    // - Leitura: o próprio usuário (pra o AuthContext checar seu bloqueio)
+    //   e RH (pra auditar/gerenciar).
+    // - Escrita: apenas RH.
+    match /blocked_users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isRh());
+      allow write: if isRh();
+    }
+
     match /vagas/{vagaId} {
-      // Leitura: RH vê tudo; gestor vê apenas as próprias.
       allow read: if isRh() ||
                      (isGestor() && resource.data.gestorUid == request.auth.uid);
-
-      // Criação: apenas gestor autenticado, e o documento precisa registrá-lo
-      // como gestor responsável.
-      allow create: if isGestor() &&
-                       request.resource.data.gestorUid == request.auth.uid &&
+      allow create: if (isRh() ||
+                        (isGestor() && request.resource.data.gestorUid == request.auth.uid)) &&
                        request.resource.data.status == 'aberta';
-
-      // Atualização: RH pode movimentar qualquer vaga;
-      // o gestor pode atualizar apenas as próprias vagas sem alterar o histórico
-      // principal (status continua sob responsabilidade do RH).
+      // Gestor pode atualizar a própria vaga (incluindo mudar status) desde
+      // que mantenha gestorUid intacto. RH pode tudo.
       allow update: if isRh() ||
                        (isGestor() &&
                         resource.data.gestorUid == request.auth.uid &&
                         request.resource.data.gestorUid == resource.data.gestorUid);
-
       allow delete: if isRh();
+    }
+
+    // === Módulo RH ===
+    // Candidatos: RH lê/escreve tudo. Gestor pode ler os candidatos vinculados
+    // a uma vaga de sua responsabilidade (via vagaGestorUid).
+    match /candidatos/{id} {
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.vagaGestorUid == request.auth.uid);
+      allow create, delete: if isRh();
+      // Gestor pode atualizar candidatos das próprias vagas (mover fase, anotar).
+      // RH pode tudo. Em ambos os casos, vagaGestorUid não pode ser alterado.
+      allow update: if isRh() ||
+                       (isGestor() &&
+                        resource.data.vagaGestorUid == request.auth.uid &&
+                        request.resource.data.vagaGestorUid == resource.data.vagaGestorUid);
+    }
+
+    // Onboarding: RH cria/edita. Gestor pode ler os onboardings das vagas
+    // sob sua responsabilidade (vinculados via candidatoId/vagaId).
+    match /onboarding/{id} {
+      allow read: if isRh() ||
+                     (isGestor() &&
+                      exists(/databases/$(database)/documents/vagas/$(resource.data.vagaId)) &&
+                      get(/databases/$(database)/documents/vagas/$(resource.data.vagaId)).data.gestorUid == request.auth.uid);
+      allow create, update, delete: if isRh();
+    }
+
+    // === Módulo DP — Departamento Pessoal ===
+    // Estagiários e colaboradores: RH cria/edita. Gestor lê seus próprios
+    // (gestorUid == auth.uid) pra acompanhar seu time.
+    match /estagiarios/{id} {
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.gestorUid == request.auth.uid);
+      allow create, update, delete: if isRh();
+    }
+
+    match /colaboradores/{id} {
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.gestorUid == request.auth.uid);
+      allow create, update, delete: if isRh();
+    }
+
+    // Notificações: cada usuário só vê e marca como lida as próprias.
+    // RH cria notificações (em batch via app); gestor pode marcar a
+    // própria como lida mas não pode criar/apagar.
+    match /notificacoes/{id} {
+      allow read: if isSignedIn() &&
+                     resource.data.destinatarioUid == request.auth.uid;
+      allow create: if isRh();
+      // Update permitido só se for marcar `lida = true` ou se for RH.
+      // (Mantemos simples: qualquer destinatário pode atualizar a própria,
+      //  já que campos de auditoria não são sensíveis.)
+      allow update: if isRh() ||
+                       (isSignedIn() &&
+                        resource.data.destinatarioUid == request.auth.uid);
+      allow delete: if isRh();
+    }
+
+    // === Sorteios ===
+    // RH cria/gerencia. Qualquer pessoa autenticada lê (pra página pública
+    // funcionar). A criação/edição só é permitida pra RH — incluindo a
+    // gravação do vencedor após o sorteio.
+    match /sorteios/{sorteioId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isRh();
+
+      // Subcoleção de inscritos: cada usuário grava seu próprio doc
+      // usando o próprio uid como ID (garante unicidade de 1 inscrição
+      // por pessoa no nível de regra). Só é permitido criar se o sorteio
+      // existe e está em 'inscricoes_abertas'. RH lê tudo pra ver lista.
+      // Ninguém (nem RH) pode apagar ou alterar um inscrito depois de
+      // criado — evita manipular a lista antes do sorteio.
+      match /participantes/{uid} {
+        allow read: if isSignedIn() &&
+                       (request.auth.uid == uid || isRh());
+        allow create: if isSignedIn() &&
+                         request.auth.uid == uid &&
+                         request.resource.data.uid == uid &&
+                         get(/databases/$(database)/documents/sorteios/$(sorteioId))
+                           .data.status == 'inscricoes_abertas';
+        allow update, delete: if false;
+      }
     }
   }
 }
