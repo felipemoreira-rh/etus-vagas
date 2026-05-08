@@ -12,7 +12,7 @@ import {
   EMPRESA_OPTIONS,
   PRESTADOR_STATUS_LABEL,
   REGIME_TRABALHO_LABEL,
-  SUSPENSAO_TIPO_LABEL,
+  SUSPENSAO_TIPO_OPTIONS,
   getRegimePessoaLabel,
 } from '../../types'
 
@@ -144,6 +144,26 @@ export default function Colaboradores() {
       await deleteDoc(doc(db, 'colaboradores', c.id))
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Erro ao excluir cadastro.')
+    }
+  }
+
+  // Cancela uma solicitação de desligamento ainda pendente. Marca o doc em
+  // `desligamentos` como `cancelado` e limpa o vínculo no colaborador,
+  // assim o botão "Solicitar desligamento" volta a ficar disponível.
+  async function cancelarDesligamentoPendente(c: Colaborador) {
+    if (!c.desligamentoSolicitadoId) return
+    if (!confirm(`Cancelar a solicitação de desligamento de "${c.nome}"?`)) return
+    try {
+      await updateDoc(doc(db, 'desligamentos', c.desligamentoSolicitadoId), {
+        status: 'cancelado',
+        atualizadoEm: serverTimestamp(),
+      })
+      await updateDoc(doc(db, 'colaboradores', c.id), {
+        desligamentoSolicitadoId: null,
+        updatedAt: serverTimestamp(),
+      })
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao cancelar solicitação.')
     }
   }
 
@@ -281,7 +301,7 @@ export default function Colaboradores() {
                           <div className="vstack" style={{ gap: 4 }}>
                             <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
                               <Link to={`/dp/colaboradores/${c.id}`} className="tbtn" title="Abrir detalhe" style={{ height: 26 }}>
-                                ▸
+                                ▸ Abrir
                               </Link>
                               <button
                                 type="button"
@@ -290,7 +310,7 @@ export default function Colaboradores() {
                                 title="Editar rápido"
                                 style={{ height: 26 }}
                               >
-                                ✎
+                                ✎ Editar
                               </button>
                               <button
                                 type="button"
@@ -299,11 +319,13 @@ export default function Colaboradores() {
                                 title="Excluir cadastro"
                                 style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
                               >
-                                🗑
+                                🗑 Excluir
                               </button>
                             </div>
                             {/* RH agora também solicita movimentações daqui (PR #7).
-                                Antes só o gestor podia, e o RH só "concluía" no detalhe. */}
+                                Antes só o gestor podia, e o RH só "concluía" no detalhe.
+                                Quando há desligamento pendente, o botão alterna pra
+                                "Cancelar desligamento" em vez de ficar desabilitado. */}
                             <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
                               {ativa ? (
                                 <button
@@ -322,21 +344,33 @@ export default function Colaboradores() {
                                   style={{ height: 24, fontSize: 11 }}
                                   onClick={() => setOpenSuspensao(c)}
                                   disabled={c.status === 'desligado'}
-                                  title="Solicitar suspensão de contrato"
+                                  title="Solicitar suspensão temporária de contrato"
                                 >
                                   ⏸ Suspender
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                className="tbtn"
-                                style={{ height: 24, fontSize: 11, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
-                                onClick={() => setDesligando(c)}
-                                disabled={c.status === 'desligado' || aguardandoDesligamento}
-                                title="Solicitar desligamento"
-                              >
-                                ⤴ Desligar
-                              </button>
+                              {aguardandoDesligamento ? (
+                                <button
+                                  type="button"
+                                  className="tbtn"
+                                  style={{ height: 24, fontSize: 11, color: 'var(--warn)', borderColor: 'var(--warn)' }}
+                                  onClick={() => cancelarDesligamentoPendente(c)}
+                                  title="Cancelar a solicitação de desligamento atual"
+                                >
+                                  ⤺ Cancelar desligamento
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="tbtn"
+                                  style={{ height: 24, fontSize: 11, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                                  onClick={() => setDesligando(c)}
+                                  disabled={c.status === 'desligado'}
+                                  title="Solicitar desligamento"
+                                >
+                                  ⤴ Solicitar desligamento
+                                </button>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -656,7 +690,7 @@ function SolicitarSuspensaoModal({ colaborador, profileUid, profileName, onClose
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Solicitar suspensão de contrato</h2>
+        <h2>Solicitar suspensão temporária de contrato</h2>
         <p>
           Registrar afastamento temporário do {tipoPessoa} <b>{colaborador.nome}</b>. A movimentação
           fica no histórico do cadastro.
@@ -667,8 +701,8 @@ function SolicitarSuspensaoModal({ colaborador, profileUid, profileName, onClose
             <div className="field">
               <label>Tipo *</label>
               <select value={tipo} onChange={(e) => setTipo(e.target.value as Suspensao['tipo'])}>
-                {Object.entries(SUSPENSAO_TIPO_LABEL).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+                {SUSPENSAO_TIPO_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>

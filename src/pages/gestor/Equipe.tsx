@@ -6,7 +6,7 @@ import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
 import type { Colaborador, Desligamento, Suspensao } from '../../types'
-import { DESLIGAMENTO_TIPO_LABEL, PRESTADOR_STATUS_LABEL, REGIME_TRABALHO_LABEL, SUSPENSAO_TIPO_LABEL } from '../../types'
+import { DESLIGAMENTO_TIPO_LABEL, PRESTADOR_STATUS_LABEL, REGIME_TRABALHO_LABEL, SUSPENSAO_TIPO_LABEL, SUSPENSAO_TIPO_OPTIONS } from '../../types'
 
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
@@ -398,7 +398,7 @@ function SolicitarSuspensaoModal({ colaborador, profileUid, profileName, onClose
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>Solicitar suspensão de contrato</h2>
+        <h2>Solicitar suspensão temporária de contrato</h2>
         <p>
           Registrar afastamento temporário de <b>{colaborador.nome}</b>. O RH é
           notificado pelo histórico — não precisa de aprovação formal.
@@ -409,8 +409,8 @@ function SolicitarSuspensaoModal({ colaborador, profileUid, profileName, onClose
             <div className="field">
               <label>Tipo *</label>
               <select value={tipo} onChange={(e) => setTipo(e.target.value as Suspensao['tipo'])}>
-                {Object.entries(SUSPENSAO_TIPO_LABEL).map(([k, v]) => (
-                  <option key={k} value={k}>{v}</option>
+                {SUSPENSAO_TIPO_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
             </div>

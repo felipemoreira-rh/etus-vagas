@@ -944,13 +944,29 @@ export interface Suspensao {
 }
 
 export const SUSPENSAO_TIPO_LABEL: Record<Suspensao['tipo'], string> = {
-  doenca: 'Doença / atestado médico',
-  maternidade: 'Licença maternidade',
-  paternidade: 'Licença paternidade',
-  licenca: 'Licença não-remunerada',
-  acidente: 'Acidente de trabalho',
+  // Mantemos todos os keys existentes pra não quebrar registros antigos.
+  // Os keys legados (doenca, acidente) caem no rótulo genérico — assim
+  // qualquer histórico antigo continua sendo exibido com texto coerente.
+  doenca: 'Suspensão temporária de contrato',
+  maternidade: 'Suspensão por maternidade',
+  paternidade: 'Suspensão por paternidade',
+  licenca: 'Suspensão temporária de contrato',
+  acidente: 'Suspensão temporária de contrato',
   outro: 'Outro',
 }
+
+/**
+ * Opções exibidas no dropdown de "Tipo" no modal de solicitação de
+ * suspensão. A pedido do RH em maio/2026: simplificar para 4 opções.
+ * Os keys legados (doenca, acidente) ficam fora do dropdown mas continuam
+ * sendo exibidos corretamente em históricos antigos via SUSPENSAO_TIPO_LABEL.
+ */
+export const SUSPENSAO_TIPO_OPTIONS: { value: Suspensao['tipo']; label: string }[] = [
+  { value: 'maternidade', label: 'Suspensão por maternidade' },
+  { value: 'paternidade', label: 'Suspensão por paternidade' },
+  { value: 'licenca', label: 'Suspensão temporária de contrato' },
+  { value: 'outro', label: 'Outro' },
+]
 
 // ═════════════════════════ FIN — NOTAS IFOOD ═════════════════════════
 export interface NotaIfood {
