@@ -29,6 +29,44 @@ function fmtDate(ts?: Timestamp | null) {
   } catch { return '—' }
 }
 
+// Monta a URL pra abrir o Google Agenda já pré-preenchido com:
+//   - título "Onboarding {nome}"
+//   - data/hora vinda do checklist (item "Agendamento de onboarding")
+//   - duração padrão de 1h
+//   - convidado: rh@etus.com.br (grupo do RH — receba o convite por e-mail)
+//   - descrição com link interno do onboarding
+// Usa o endpoint público `/calendar/render?action=TEMPLATE` (sem OAuth).
+// Quando o RH clicar em "Salvar" no Calendar, o convite é disparado pra
+// rh@etus.com.br automaticamente.
+function buildGoogleAgendaUrl(ob: Onboarding, scheduledAt?: Timestamp): string {
+  const base = scheduledAt ? scheduledAt.toDate() : new Date()
+  // Default 10:00 local — RH ajusta no Calendar antes de salvar se quiser.
+  if (!scheduledAt || (base.getHours() === 0 && base.getMinutes() === 0)) {
+    base.setHours(10, 0, 0, 0)
+  }
+  const start = new Date(base)
+  const end = new Date(base.getTime() + 60 * 60 * 1000)
+  const fmt = (d: Date) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00Z`
+  }
+  const text = `Onboarding ${ob.candidatoNome || ''}`.trim()
+  const detalhes = [
+    `Vaga: ${ob.vagaCargo || '—'}`,
+    `Empresa: ${ob.empresa || '—'}`,
+    ob.candidatoEmail ? `E-mail do candidato: ${ob.candidatoEmail}` : '',
+    `Sistema: ${typeof window !== 'undefined' ? window.location.origin : ''}/rh/onboarding/${ob.id}`,
+  ].filter(Boolean).join('\n')
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text,
+    dates: `${fmt(start)}/${fmt(end)}`,
+    details: detalhes,
+    add: 'rh@etus.com.br',
+  })
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
+
 export default function OnboardingDetalhe() {
   const { id } = useParams()
   const { profile } = useAuth()
@@ -362,7 +400,7 @@ export default function OnboardingDetalhe() {
                         </div>
                         {item.descricao && <div className="cl-sub">{item.descricao}</div>}
                         {isAgendamento && (
-                          <div className="hstack" style={{ marginTop: 6, gap: 8, alignItems: 'center' }}>
+                          <div className="hstack" style={{ marginTop: 6, gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                             <label style={{ fontSize: 11, color: 'var(--mut)' }}>Data:</label>
                             <input
                               type="date"
@@ -375,6 +413,26 @@ export default function OnboardingDetalhe() {
                               <span style={{ fontSize: 11, color: 'var(--g600, #16a34a)' }}>
                                 Agendado para {fmtDate(item.scheduledAt)}
                               </span>
+                            )}
+                            {/*
+                              Botão de Google Agenda (pedido em maio/26):
+                              abre o Calendar pré-preenchido com o convite,
+                              tendo rh@etus.com.br como convidado. O RH
+                              só clica em "Salvar" no Calendar pra disparar
+                              o convite por e-mail. Sem necessidade de OAuth.
+                            */}
+                            {dateValue && ob && (
+                              <a
+                                href={buildGoogleAgendaUrl(ob, item.scheduledAt)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="tbtn"
+                                style={{ height: 26, fontSize: 11, padding: '0 10px', textDecoration: 'none' }}
+                                title="Abre o Google Agenda com convite pré-preenchido para rh@etus.com.br"
+                              >
+                                📅 Adicionar à Agenda do Google
+                              </a>
                             )}
                           </div>
                         )}

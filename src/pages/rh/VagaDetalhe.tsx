@@ -91,13 +91,30 @@ export default function VagaDetalheRh() {
         toStatus: novoStatus,
         ...(nota.trim() ? { nota: nota.trim() } : {}),
       }
-      await updateDoc(doc(db, 'vagas', vaga.id), {
+      // Quando a vaga é finalizada (contratada) ou cancelada, congela o
+      // contador de SLA: grava dataFechamento + diasAberta. Se voltar pra
+      // status ativo (ex.: reabertura), zera os dois pra recomeçar a contagem.
+      const FINALIZADOS: VagaStatus[] = ['contratada', 'cancelada']
+      const wasFinal = FINALIZADOS.includes(vaga.status)
+      const isFinal = FINALIZADOS.includes(novoStatus)
+      const patch: Record<string, unknown> = {
         status: novoStatus,
         updatedAt: serverTimestamp(),
         historico: arrayUnion(mov),
         responsavelRhUid: profile.uid,
         responsavelRhNome: profile.name,
-      })
+      }
+      if (isFinal && !wasFinal) {
+        const ini = vaga.createdAt?.toDate?.() ?? new Date()
+        const dias = Math.max(0, Math.floor((Date.now() - ini.getTime()) / 86400000))
+        patch.dataFechamento = Timestamp.now()
+        patch.diasAberta = dias
+      } else if (!isFinal && wasFinal) {
+        // Re-abertura: limpa marcações de fechamento.
+        patch.dataFechamento = null
+        patch.diasAberta = null
+      }
+      await updateDoc(doc(db, 'vagas', vaga.id), patch)
       setNota('')
     } catch (err) {
       setErr(err instanceof Error ? err.message : 'Erro ao salvar.')

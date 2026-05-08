@@ -20,6 +20,7 @@ import RhUsuarios from './pages/rh/Usuarios'
 // DP
 import DpDashboard from './pages/dp/Dashboard'
 import DpEstagiarios from './pages/dp/Estagiarios'
+import DpEstagiarioDetalhe from './pages/dp/EstagiarioDetalhe'
 import DpColaboradores from './pages/dp/Colaboradores'
 import DpPrestadorDetalhe from './pages/dp/PrestadorDetalhe'
 import DpPeriodoExperiencia from './pages/dp/PeriodoExperiencia'
@@ -80,6 +81,7 @@ export default function App() {
         <Route path="/dp" element={<Navigate to="/dp/dashboard" replace />} />
         <Route path="/dp/dashboard" element={<RhRoute><DpDashboard /></RhRoute>} />
         <Route path="/dp/estagiarios" element={<RhRoute><DpEstagiarios /></RhRoute>} />
+        <Route path="/dp/estagiarios/:id" element={<RhRoute><DpEstagiarioDetalhe /></RhRoute>} />
         <Route path="/dp/colaboradores" element={<RhRoute><DpColaboradores /></RhRoute>} />
         <Route path="/dp/colaboradores/:id" element={<RhRoute><DpPrestadorDetalhe /></RhRoute>} />
         <Route path="/dp/periodo-experiencia" element={<RhRoute><DpPeriodoExperiencia /></RhRoute>} />

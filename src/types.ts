@@ -50,15 +50,20 @@ export type VagaStatus =
   | 'pausada'
   | 'cancelada'
 
+// Renomeado em 2026-05: "Contratada" → "Finalizada". O valor interno
+// continua sendo `contratada` para compat com docs antigos do Firestore.
 export const STATUS_LABELS: Record<VagaStatus, string> = {
   aberta: 'Aberta',
   triagem: 'Triagem de CVs',
   entrevistas: 'Em entrevistas',
   proposta: 'Proposta',
-  contratada: 'Contratada',
+  contratada: 'Finalizada',
   pausada: 'Pausada',
   cancelada: 'Cancelada',
 }
+
+// Status que indicam que a vaga FOI fechada (parou contador de SLA).
+export const STATUS_FINALIZADOS: VagaStatus[] = ['contratada', 'cancelada']
 
 export const STATUS_ORDER: VagaStatus[] = [
   'aberta',
@@ -148,6 +153,12 @@ export interface Vaga {
 
   // SLA (opcional; calculado via createdAt)
   slaMetaDias?: number
+
+  // Quando vaga é finalizada/cancelada, gravamos o timestamp do fechamento
+  // e quantos dias ela ficou aberta. Permite calcular SLA médio das
+  // finalizadas e mostrar "Aberta em" + "Fechada em" no detalhe.
+  dataFechamento?: Timestamp
+  diasAberta?: number
 }
 
 // Helper pra ler empresas de uma vaga lidando com docs antigos que tinham
@@ -328,10 +339,26 @@ const CHECKLIST_PADRAO: string[] = [
   'Cadastro de benefícios',
 ]
 
+// Checklist específico de estágio (definido em maio/26):
+// fluxo via Super Estágios + assinatura de diretoria.
+const CHECKLIST_ESTAGIO: string[] = [
+  'Enviar proposta',
+  'Enviar link para preenchimento de forms',
+  'Solicitar contrato Super Estágios',
+  'Solicitar assinatura do contrato pela diretoria',
+  'Solicitar fotos e curiosidades',
+  'Documentos recebidos',
+  'Solicitação de equipamentos e acessos',
+  'Envio de e-mail de início',
+  'Agendamento de onboarding',
+  'Notificação de início para o gestor que abriu a vaga',
+  'Cadastro de benefícios',
+]
+
 export const ONBOARDING_CHECKLIST_TEMPLATES: Record<OnboardingTipo, string[]> = {
   CLT: CHECKLIST_PADRAO,
   PJ: CHECKLIST_PADRAO,
-  ESTAGIO: CHECKLIST_PADRAO,
+  ESTAGIO: CHECKLIST_ESTAGIO,
   FREELANCER: CHECKLIST_PADRAO,
 }
 
@@ -418,12 +445,19 @@ export interface Notificacao {
 }
 
 // ═════════════════════════ DP — ESTAGIÁRIOS ═════════════════════════
+// Status do estagiário. Mantemos os valores legados ('ativo' | 'finalizado'
+// | 'desligado' | 'efetivado') e adicionamos 'contrato_suspenso' (paralelo
+// ao Colaborador) para o fluxo de afastamento temporário.
+export type EstagiarioStatusType = 'ativo' | 'finalizado' | 'desligado' | 'efetivado' | 'contrato_suspenso'
+
 export interface Estagiario {
   id: string
   nome: string
   email?: string
+  emailCorporativo?: string
   telefone?: string
   cpf?: string
+  rg?: string
   curso: string
   instituicao: string
   semestre?: string
@@ -432,11 +466,51 @@ export interface Estagiario {
   mentor?: string
   gestorUid?: string
   gestorNome?: string
+  /** Superior imediato (pode ser igual ao gestor da vaga ou outro). */
+  superiorUid?: string
+  superiorNome?: string
   dataInicio: Timestamp
   dataTermino: Timestamp
   bolsa?: number
-  status: 'ativo' | 'finalizado' | 'desligado' | 'efetivado'
+  status: EstagiarioStatusType
   observacoes?: string
+
+  // Demográficos / pessoais
+  dataNascimento?: Timestamp
+  genero?: Genero
+  generoOutro?: string
+  raca?: RacaCor
+  nacionalidade?: string
+  naturalidade?: string
+  pcd?: boolean
+  pcdDescricao?: string
+
+  // Foto de perfil (URL pública no Storage)
+  fotoUrl?: string
+  fotoPath?: string
+
+  // Endereço, contato emergência, dados bancários, família
+  endereco?: Endereco
+  contatoEmergencia?: ContatoEmergencia
+  dadosBancarios?: DadosBancarios
+  familia?: Familia
+
+  // Educação
+  escolaridade?: FormacaoEducacional[]
+  idiomas?: IdiomaFalado[]
+
+  // Documentos digitalizados (uploads)
+  documentos?: DocumentoDigitalizado[]
+
+  // Históricos imutáveis (só append)
+  historicoCargo?: HistoricoCargoEntry[]
+  historicoSalario?: HistoricoSalarioEntry[]
+
+  // Histórico de suspensões temporárias de contrato
+  suspensoes?: Suspensao[]
+  /** Solicitação de desligamento ATIVA (referência ao doc em `desligamentos`). */
+  desligamentoSolicitadoId?: string
+
   // Origem (quando criado a partir do fluxo de onboarding).
   candidatoId?: string
   vagaId?: string
@@ -450,6 +524,14 @@ export interface Estagiario {
   indicadoPorUid?: string
   createdAt: Timestamp
   updatedAt: Timestamp
+}
+
+export const ESTAGIARIO_STATUS_LABEL: Record<EstagiarioStatusType, string> = {
+  ativo: 'Ativo',
+  efetivado: 'Efetivado',
+  finalizado: 'Finalizado',
+  desligado: 'Desligado',
+  contrato_suspenso: 'Contrato suspenso',
 }
 
 // ═════════════════════════ DP — PRESTADORES (a.k.a. Colaboradores legacy) ═════════════════════════
@@ -689,6 +771,13 @@ export interface Desligamento {
   colaboradorNome: string
   empresa: string
   cargo: string
+
+  /**
+   * Tipo do contratado que está sendo desligado. Se ausente, assume
+   * 'colaborador' (default histórico). Quando 'estagiario', o desligamento
+   * pertence a um doc da coleção `estagiarios` em vez de `colaboradores`.
+   */
+  contratadoTipo?: 'colaborador' | 'estagiario'
 
   /** Motivo informado pelo gestor (texto livre). */
   motivo: string

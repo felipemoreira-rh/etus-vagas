@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import {
   addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, Timestamp, updateDoc,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
-import type { Colaborador, Estagiario, RegimeTrabalho } from '../../types'
-import { EMPRESA_OPTIONS, REGIME_TRABALHO_LABEL } from '../../types'
+import type { Colaborador, Desligamento, Estagiario, RegimeTrabalho } from '../../types'
+import { DESLIGAMENTO_TIPO_LABEL, EMPRESA_OPTIONS, REGIME_TRABALHO_LABEL } from '../../types'
 
 type EstagiarioStatus = Estagiario['status']
 
@@ -44,6 +46,7 @@ export default function Estagiarios() {
   const [openModal, setOpenModal] = useState(false)
   const [editing, setEditing] = useState<Estagiario | null>(null)
   const [efetivando, setEfetivando] = useState<Estagiario | null>(null)
+  const [desligando, setDesligando] = useState<Estagiario | null>(null)
 
   useEffect(() => {
     const unsub = onSnapshot(query(collection(db, 'estagiarios')), (s) => {
@@ -164,8 +167,10 @@ export default function Estagiarios() {
                     return (
                       <tr key={e.id}>
                         <td>
-                          <div className="tdm">{e.nome}</div>
-                          <div className="tds">{e.email || '—'}</div>
+                          <Link to={`/dp/estagiarios/${e.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                            <div className="tdm" style={{ color: 'var(--g600)' }}>{e.nome}</div>
+                            <div className="tds">{e.email || '—'}</div>
+                          </Link>
                         </td>
                         <td style={{ fontSize: 12 }}>{e.curso || '—'} · {e.instituicao || '—'}</td>
                         <td style={{ fontSize: 12, color: 'var(--mut)' }}>{e.area}</td>
@@ -197,6 +202,22 @@ export default function Estagiarios() {
                               >
                                 ▲ Efetivar
                               </button>
+                            )}
+                            {e.status === 'ativo' && !e.desligamentoSolicitadoId && (
+                              <button
+                                type="button"
+                                className="tbtn"
+                                onClick={() => setDesligando(e)}
+                                title="Solicitar desligamento"
+                                style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                              >
+                                ⤬
+                              </button>
+                            )}
+                            {e.desligamentoSolicitadoId && (
+                              <span className="bdg bad" title="Desligamento já solicitado — aguardando RH" style={{ fontSize: 10 }}>
+                                Desligando
+                              </span>
                             )}
                             <button
                               type="button"
@@ -236,7 +257,112 @@ export default function Estagiarios() {
           onClose={() => setEfetivando(null)}
         />
       )}
+      {desligando && (
+        <SolicitarDesligamentoEstagiarioModal
+          estagiario={desligando}
+          onClose={() => setDesligando(null)}
+        />
+      )}
     </>
+  )
+}
+
+// ───────────────── Modal: solicitar desligamento de estagiário ─────────────────
+// Igual ao fluxo de prestador (Equipe.tsx do gestor): cria um doc em
+// `desligamentos` marcando contratadoTipo='estagiario'. O RH conclui em
+// /dp/desligamentos. Aqui na lista o RH também pode iniciar (pedido em maio/26).
+function SolicitarDesligamentoEstagiarioModal({ estagiario, onClose }: {
+  estagiario: Estagiario
+  onClose: () => void
+}) {
+  const { profile } = useAuth()
+  const [tipo, setTipo] = useState<Desligamento['tipo']>('voluntario')
+  const [motivo, setMotivo] = useState('')
+  const [dataPrevista, setDataPrevista] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 30)
+    return d.toISOString().slice(0, 10)
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!motivo.trim()) { setErr('Informe o motivo do desligamento.'); return }
+    if (!profile) { setErr('Sessão expirada.'); return }
+    setSaving(true); setErr(null)
+    try {
+      const dataTs = Timestamp.fromDate(new Date(dataPrevista + 'T00:00:00'))
+      const novo = {
+        colaboradorId: estagiario.id,
+        colaboradorNome: estagiario.nome,
+        empresa: estagiario.empresa,
+        // No estagiário não há cargo separado — usamos a área como rótulo
+        // pra preencher o doc de desligamento (que é compartilhado com PJ/CLT).
+        cargo: estagiario.area,
+        contratadoTipo: 'estagiario' as const,
+        motivo: motivo.trim(),
+        tipo,
+        dataPrevista: dataTs,
+        solicitanteUid: profile.uid,
+        solicitanteNome: profile.name,
+        status: 'pendente' as const,
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      }
+      const ref = await addDoc(collection(db, 'desligamentos'), novo)
+      await updateDoc(doc(db, 'estagiarios', estagiario.id), {
+        desligamentoSolicitadoId: ref.id,
+        updatedAt: serverTimestamp(),
+      })
+      onClose()
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Erro ao solicitar desligamento.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Solicitar desligamento</h2>
+        <p>
+          Solicitar desligamento de <b>{estagiario.nome}</b>. O RH conclui o
+          processo em "Desligamentos" e arquiva o registro.
+        </p>
+        <form onSubmit={handleSubmit} className="row-gap-14">
+          {err && <div className="error-text">{err}</div>}
+          <div className="form-grid">
+            <div className="field">
+              <label>Tipo *</label>
+              <select value={tipo} onChange={(e) => setTipo(e.target.value as Desligamento['tipo'])}>
+                {Object.entries(DESLIGAMENTO_TIPO_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Data prevista *</label>
+              <input type="date" value={dataPrevista} onChange={(e) => setDataPrevista(e.target.value)} required />
+            </div>
+            <div className="field" style={{ gridColumn: '1 / -1' }}>
+              <label>Motivo / contexto *</label>
+              <textarea
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Ex.: Pediu para encerrar o estágio, último dia em DD/MM."
+                required
+                rows={4}
+              />
+            </div>
+          </div>
+          <div className="hstack" style={{ justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={saving} style={{ background: 'var(--bad)' }}>
+              {saving ? 'Solicitando…' : 'Solicitar desligamento'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   )
 }
 

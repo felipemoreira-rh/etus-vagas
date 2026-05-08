@@ -100,12 +100,27 @@ export default function DpDashboard() {
   const kpis = useMemo(() => {
     const estAtivos = estagiarios.filter(e => e.status === 'ativo').length
     const colAtivos = colaboradores.filter(c => c.status === 'ativo').length
-    const colFerias = colaboradores.filter(c => c.status === 'ferias').length
+    // "Contratos suspensos" combina o status `contrato_suspenso` (rótulo
+    // novo) e quem tem alguma suspensão ativa em `suspensoes` (histórico
+    // gravado pelo gestor). Substitui o KPI de "Em férias" — pedido pelo
+    // RH em maio/26 por ser mais relevante pro DP.
+    const colSuspensos = colaboradores.filter(c =>
+      c.status === 'contrato_suspenso'
+      || (c.suspensoes || []).some(s => s.status === 'ativa'),
+    ).length
+    const estSuspensos = estagiarios.filter(e =>
+      e.status === 'contrato_suspenso'
+      || (e.suspensoes || []).some(s => s.status === 'ativa'),
+    ).length
     const expPend = colaboradores.filter(c => {
       if (!c.experiencia) return false
       return c.experiencia.resultado45 === 'pendente' || c.experiencia.resultado90 === 'pendente'
     }).length
-    return { estAtivos, colAtivos, colFerias, expPend, totalEst: estagiarios.length, totalCol: colaboradores.length }
+    return {
+      estAtivos, colAtivos, expPend,
+      contratosSuspensos: colSuspensos + estSuspensos,
+      totalEst: estagiarios.length, totalCol: colaboradores.length,
+    }
   }, [estagiarios, colaboradores])
 
   // Aniversariantes do mês (incluindo o próprio dia de hoje em destaque).
@@ -177,7 +192,13 @@ export default function DpDashboard() {
         <div className="krow k4">
           <KpiCard label="Prestadores ativos" value={kpis.colAtivos} icon="◉" tone="g" meta={`Total: ${kpis.totalCol}`} />
           <KpiCard label="Estagiários ativos" value={kpis.estAtivos} icon="◱" tone="b" meta={`Total: ${kpis.totalEst}`} />
-          <KpiCard label="Em férias" value={kpis.colFerias} icon="☀" tone="a" />
+          <KpiCard
+            label="Contratos suspensos"
+            value={kpis.contratosSuspensos}
+            icon="⏸"
+            tone={kpis.contratosSuspensos > 0 ? 'a' : 'g'}
+            meta="Prestadores + estagiários"
+          />
           <KpiCard
             label="Contratos a vencer (≤30d)"
             value={alerta30d.length}
