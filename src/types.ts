@@ -547,6 +547,36 @@ export const REGIME_TRABALHO_LABEL: Record<RegimeTrabalho, string> = {
   freelancer: 'Freelancer',
 }
 
+/**
+ * Rótulo "humano" da pessoa baseado no regime — pedido em maio/26 pra
+ * separar PJ (Prestador) de CLT (Colaborador) na UI mesmo continuando
+ * tudo na mesma coleção `colaboradores`.
+ *
+ * - PJ          → Prestador
+ * - CLT         → Colaborador
+ * - Estágio     → Estagiário (já fica na coleção `estagiarios`)
+ * - Freelancer  → Freelancer
+ */
+export function getRegimePessoaLabel(regime: RegimeTrabalho | undefined): string {
+  switch (regime) {
+    case 'pj': return 'Prestador'
+    case 'clt': return 'Colaborador'
+    case 'estagio': return 'Estagiário'
+    case 'freelancer': return 'Freelancer'
+    default: return 'Pessoa'
+  }
+}
+
+export function getRegimePessoaLabelPlural(regime: RegimeTrabalho | undefined): string {
+  switch (regime) {
+    case 'pj': return 'Prestadores'
+    case 'clt': return 'Colaboradores'
+    case 'estagio': return 'Estagiários'
+    case 'freelancer': return 'Freelancers'
+    default: return 'Pessoas'
+  }
+}
+
 // ── Status do prestador ──────────────────────────────────────────────
 // 'contrato_suspenso' foi adicionado em 2026-05; substitui semanticamente
 // "férias" para PJ/freelance (mas mantemos 'ferias' aqui pra compat com

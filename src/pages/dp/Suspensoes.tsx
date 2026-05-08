@@ -8,7 +8,7 @@ import type { Colaborador, Suspensao } from '../../types'
 import { SUSPENSAO_TIPO_LABEL } from '../../types'
 
 // Página dedicada de histórico de suspensões de contrato (RH only).
-// Lê de todos os prestadores e desnormaliza pra mostrar uma tabela única.
+// Lê de todos os colaboradores/prestadores e desnormaliza numa tabela única.
 
 function fmtDate(ts?: Timestamp | null) {
   if (!ts) return '—'
@@ -85,7 +85,7 @@ export default function Suspensoes() {
           <div className="filter-bar">
             <div className="swrap">
               <span className="sico">⌕</span>
-              <input className="srch" placeholder="Buscar por prestador, empresa ou motivo…" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <input className="srch" placeholder="Buscar por nome, empresa ou motivo…" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
             <select value={statusF} onChange={(e) => setStatusF(e.target.value as typeof statusF)}>
               <option value="todos">Todos os status</option>
@@ -111,7 +111,7 @@ export default function Suspensoes() {
               <table>
                 <thead>
                   <tr>
-                    <th>Prestador</th>
+                    <th>Pessoa</th>
                     <th>Empresa</th>
                     <th>Tipo</th>
                     <th>Início</th>

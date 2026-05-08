@@ -22,7 +22,10 @@ const NAV: Record<ModuleKey, NavItem[]> = {
   dp: [
     { to: '/dp/dashboard', label: 'Dashboard DP', icon: '◈' },
     { to: '/dp/estagiarios', label: 'Estagiários', icon: '◱' },
-    { to: '/dp/colaboradores', label: 'Prestadores', icon: '◉' },
+    // Pedido em maio/26: separar PJ x CLT em itens distintos do menu.
+    // Internamente apontam pra mesma página filtrando por regime.
+    { to: '/dp/colaboradores?regime=clt', label: 'Colaboradores (CLT)', icon: '◉' },
+    { to: '/dp/colaboradores?regime=pj', label: 'Prestadores (PJ)', icon: '◐' },
     { to: '/dp/periodo-experiencia', label: 'Período de Experiência', icon: '⧗' },
     { to: '/dp/indicacoes', label: 'Indicações', icon: '★' },
     { to: '/dp/suspensoes', label: 'Histórico de Suspensões', icon: '⏸' },

@@ -1,14 +1,33 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
-  addDoc, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, Timestamp, updateDoc,
+  addDoc, arrayUnion, collection, deleteDoc, doc, onSnapshot, query, serverTimestamp, Timestamp, updateDoc,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
+import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
-import type { Colaborador, PrestadorStatus, RegimeTrabalho } from '../../types'
-import { EMPRESA_OPTIONS, PRESTADOR_STATUS_LABEL, REGIME_TRABALHO_LABEL } from '../../types'
+import type { Colaborador, Desligamento, PrestadorStatus, RegimeTrabalho, Suspensao } from '../../types'
+import {
+  DESLIGAMENTO_TIPO_LABEL,
+  EMPRESA_OPTIONS,
+  PRESTADOR_STATUS_LABEL,
+  REGIME_TRABALHO_LABEL,
+  SUSPENSAO_TIPO_LABEL,
+  getRegimePessoaLabel,
+} from '../../types'
 
 type ColaboradorStatus = PrestadorStatus
+
+// Filtro de regime vindo da URL. O sidebar usa ?regime=clt ou ?regime=pj
+// pra reaproveitar essa mesma página separando "Colaboradores (CLT)" de
+// "Prestadores (PJ)" sem precisar duplicar componente nem mexer na coleção
+// `colaboradores` (que continua guardando os dois tipos juntos).
+type RegimeFiltroUrl = 'clt' | 'pj' | 'todos'
+
+function parseRegimeFiltro(v: string | null): RegimeFiltroUrl {
+  if (v === 'clt' || v === 'pj') return v
+  return 'todos'
+}
 
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
@@ -38,13 +57,39 @@ function diasParaBonusIndicacao(adm?: Timestamp | null) {
   } catch { return null }
 }
 
+function suspensaoAtiva(c: Colaborador): Suspensao | null {
+  const list = c.suspensoes || []
+  return list.find(s => s.status === 'ativa') || null
+}
+
 export default function Colaboradores() {
+  const { profile } = useAuth()
+  const [searchParams] = useSearchParams()
+  const regimeFiltro = parseRegimeFiltro(searchParams.get('regime'))
+
   const [items, setItems] = useState<Colaborador[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusF, setStatusF] = useState<string>('todos')
   const [openModal, setOpenModal] = useState(false)
   const [editing, setEditing] = useState<Colaborador | null>(null)
+  // Modais de movimentação (RH também solicita, igual gestor faz):
+  const [openSuspensao, setOpenSuspensao] = useState<Colaborador | null>(null)
+  const [encerrando, setEncerrando] = useState<{ colab: Colaborador; suspensao: Suspensao } | null>(null)
+  const [desligando, setDesligando] = useState<Colaborador | null>(null)
+
+  // Rótulos da página dependem do filtro de regime — não mudam dados,
+  // só a comunicação visual (Topbar, botão "Novo …", placeholders, etc.).
+  const labelSingular = regimeFiltro === 'pj' ? 'Prestador'
+    : regimeFiltro === 'clt' ? 'Colaborador'
+    : 'Colaborador / Prestador'
+  const labelPlural = regimeFiltro === 'pj' ? 'Prestadores'
+    : regimeFiltro === 'clt' ? 'Colaboradores'
+    : 'Colaboradores e Prestadores'
+  const novoBtnLabel = regimeFiltro === 'pj' ? '＋ Novo prestador (PJ)'
+    : regimeFiltro === 'clt' ? '＋ Novo colaborador (CLT)'
+    : '＋ Novo cadastro'
+  const topbarIcon = regimeFiltro === 'pj' ? '◐' : '◉'
 
   useEffect(() => {
     const unsub = onSnapshot(query(collection(db, 'colaboradores')), (s) => {
@@ -58,6 +103,9 @@ export default function Colaboradores() {
 
   const filtered = useMemo(() => {
     return items.filter(c => {
+      // Filtro por regime (vem da URL, controla a aba do menu lateral)
+      if (regimeFiltro === 'clt' && c.regime !== 'clt') return false
+      if (regimeFiltro === 'pj' && c.regime !== 'pj') return false
       if (statusF !== 'todos' && c.status !== statusF) return false
       if (search) {
         const s = search.toLowerCase()
@@ -65,13 +113,19 @@ export default function Colaboradores() {
       }
       return true
     })
-  }, [items, search, statusF])
+  }, [items, search, statusF, regimeFiltro])
 
   // Card de bônus de indicação: lista colaboradores que vieram via indicação
   // e ainda têm countdown de 90d em aberto (ou já completaram).
+  // Respeita o filtro de regime — só faz sentido para o universo da aba.
   const indicacoes = useMemo(() => {
     return items
-      .filter(c => c.status === 'ativo' && c.indicadoPorNome)
+      .filter(c => {
+        if (c.status !== 'ativo' || !c.indicadoPorNome) return false
+        if (regimeFiltro === 'clt' && c.regime !== 'clt') return false
+        if (regimeFiltro === 'pj' && c.regime !== 'pj') return false
+        return true
+      })
       .map(c => ({
         c,
         diasRestantes: diasParaBonusIndicacao(c.dataAdmissao),
@@ -81,23 +135,24 @@ export default function Colaboradores() {
         const db = b.diasRestantes ?? 9999
         return da - db
       })
-  }, [items])
+  }, [items, regimeFiltro])
 
   async function excluir(c: Colaborador) {
-    if (!confirm(`Excluir o prestador "${c.nome}"?\n\nEssa ação é permanente.`)) return
+    const tipo = getRegimePessoaLabel(c.regime).toLowerCase()
+    if (!confirm(`Excluir o ${tipo} "${c.nome}"?\n\nEssa ação é permanente.`)) return
     try {
       await deleteDoc(doc(db, 'colaboradores', c.id))
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao excluir colaborador.')
+      alert(err instanceof Error ? err.message : 'Erro ao excluir cadastro.')
     }
   }
 
   return (
     <>
       <Topbar
-        title="Prestadores"
-        icon="◉"
-        actions={<button className="tbtn pri" onClick={() => setOpenModal(true)}>＋ Novo prestador</button>}
+        title={labelPlural}
+        icon={topbarIcon}
+        actions={<button className="tbtn pri" onClick={() => setOpenModal(true)}>{novoBtnLabel}</button>}
       />
       <div className="content">
         {indicacoes.length > 0 && (
@@ -164,9 +219,15 @@ export default function Colaboradores() {
             <div className="empty-state">Carregando…</div>
           ) : filtered.length === 0 ? (
             <div className="empty">
-              <div className="empty-ico">◉</div>
-              <div className="empty-ttl">Nenhum prestador</div>
-              <div className="empty-sub">Cadastre prestadores para acompanhar.</div>
+              <div className="empty-ico">{topbarIcon}</div>
+              <div className="empty-ttl">Nenhum {labelSingular.toLowerCase()}</div>
+              <div className="empty-sub">
+                {regimeFiltro === 'pj'
+                  ? 'Cadastre prestadores (PJ) para acompanhar.'
+                  : regimeFiltro === 'clt'
+                    ? 'Cadastre colaboradores (CLT) para acompanhar.'
+                    : 'Cadastre colaboradores ou prestadores para acompanhar.'}
+              </div>
             </div>
           ) : (
             <div className="panel-scroll">
@@ -180,11 +241,13 @@ export default function Colaboradores() {
                     <th>Regime</th>
                     <th>Admissão</th>
                     <th>Status</th>
-                    <th style={{ width: 100 }}></th>
+                    <th style={{ width: 220 }}>Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map(c => {
+                    const ativa = suspensaoAtiva(c)
+                    const aguardandoDesligamento = !!c.desligamentoSolicitadoId
                     const statusBdg = c.status === 'ativo' ? 'ok'
                       : c.status === 'ferias' || c.status === 'contrato_suspenso' ? 'warn'
                       : c.status === 'afastado' ? 'info' : 'bad'
@@ -208,30 +271,73 @@ export default function Colaboradores() {
                         <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(c.dataAdmissao)}</td>
                         <td>
                           <span className={`bdg ${statusBdg}`}>{PRESTADOR_STATUS_LABEL[c.status]}</span>
+                          {aguardandoDesligamento && (
+                            <div style={{ fontSize: 10, color: 'var(--warn)', marginTop: 3 }}>
+                              Desligamento em análise
+                            </div>
+                          )}
                         </td>
                         <td>
-                          <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
-                            <Link to={`/dp/colaboradores/${c.id}`} className="tbtn" title="Abrir detalhe" style={{ height: 26 }}>
-                              ▸
-                            </Link>
-                            <button
-                              type="button"
-                              className="tbtn"
-                              onClick={() => setEditing(c)}
-                              title="Editar rápido"
-                              style={{ height: 26 }}
-                            >
-                              ✎
-                            </button>
-                            <button
-                              type="button"
-                              className="tbtn"
-                              onClick={() => excluir(c)}
-                              title="Excluir cadastro"
-                              style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
-                            >
-                              🗑
-                            </button>
+                          <div className="vstack" style={{ gap: 4 }}>
+                            <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                              <Link to={`/dp/colaboradores/${c.id}`} className="tbtn" title="Abrir detalhe" style={{ height: 26 }}>
+                                ▸
+                              </Link>
+                              <button
+                                type="button"
+                                className="tbtn"
+                                onClick={() => setEditing(c)}
+                                title="Editar rápido"
+                                style={{ height: 26 }}
+                              >
+                                ✎
+                              </button>
+                              <button
+                                type="button"
+                                className="tbtn"
+                                onClick={() => excluir(c)}
+                                title="Excluir cadastro"
+                                style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                              >
+                                🗑
+                              </button>
+                            </div>
+                            {/* RH agora também solicita movimentações daqui (PR #7).
+                                Antes só o gestor podia, e o RH só "concluía" no detalhe. */}
+                            <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                              {ativa ? (
+                                <button
+                                  type="button"
+                                  className="tbtn"
+                                  style={{ height: 24, fontSize: 11 }}
+                                  onClick={() => setEncerrando({ colab: c, suspensao: ativa })}
+                                  title={`Suspenso desde ${formatDate(ativa.inicio)}`}
+                                >
+                                  ⏵ Encerrar suspensão
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="tbtn"
+                                  style={{ height: 24, fontSize: 11 }}
+                                  onClick={() => setOpenSuspensao(c)}
+                                  disabled={c.status === 'desligado'}
+                                  title="Solicitar suspensão de contrato"
+                                >
+                                  ⏸ Suspender
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="tbtn"
+                                style={{ height: 24, fontSize: 11, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                                onClick={() => setDesligando(c)}
+                                disabled={c.status === 'desligado' || aguardandoDesligamento}
+                                title="Solicitar desligamento"
+                              >
+                                ⤴ Desligar
+                              </button>
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -244,26 +350,63 @@ export default function Colaboradores() {
         </div>
       </div>
 
-      {openModal && <ColaboradorModal onClose={() => setOpenModal(false)} />}
+      {openModal && (
+        <ColaboradorModal
+          regimeInicial={regimeFiltro === 'pj' ? 'pj' : 'clt'}
+          onClose={() => setOpenModal(false)}
+        />
+      )}
       {editing && <ColaboradorModal colaborador={editing} onClose={() => setEditing(null)} />}
+
+      {openSuspensao && profile && (
+        <SolicitarSuspensaoModal
+          colaborador={openSuspensao}
+          profileUid={profile.uid}
+          profileName={profile.name || profile.email || ''}
+          onClose={() => setOpenSuspensao(null)}
+        />
+      )}
+      {encerrando && (
+        <EncerrarSuspensaoModal
+          colaborador={encerrando.colab}
+          suspensao={encerrando.suspensao}
+          onClose={() => setEncerrando(null)}
+        />
+      )}
+      {desligando && profile && (
+        <SolicitarDesligamentoModal
+          colaborador={desligando}
+          profileUid={profile.uid}
+          profileName={profile.name || profile.email || ''}
+          onClose={() => setDesligando(null)}
+        />
+      )}
     </>
   )
 }
 
-function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador, onClose: () => void }) {
+function ColaboradorModal({ colaborador, regimeInicial, onClose }: {
+  colaborador?: Colaborador
+  regimeInicial?: RegimeTrabalho
+  onClose: () => void
+}) {
   const isEdit = !!colaborador
   const [nome, setNome] = useState(colaborador?.nome ?? '')
   const [email, setEmail] = useState(colaborador?.email ?? '')
   const [cargo, setCargo] = useState(colaborador?.cargo ?? '')
   const [area, setArea] = useState(colaborador?.area ?? '')
   const [empresa, setEmpresa] = useState(colaborador?.empresa ?? '')
-  const [regime, setRegime] = useState<RegimeTrabalho>(colaborador?.regime ?? 'clt')
+  const [regime, setRegime] = useState<RegimeTrabalho>(colaborador?.regime ?? regimeInicial ?? 'clt')
   const [dataAdmissao, setDataAdmissao] = useState(toDateInput(colaborador?.dataAdmissao))
   const [salario, setSalario] = useState<number | ''>(typeof colaborador?.salario === 'number' ? colaborador.salario : '')
   const [status, setStatus] = useState<ColaboradorStatus>(colaborador?.status ?? 'ativo')
   const [indicadoPorNome, setIndicadoPorNome] = useState(colaborador?.indicadoPorNome ?? '')
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+
+  const tituloLabel = isEdit
+    ? `Editar ${getRegimePessoaLabel(colaborador!.regime).toLowerCase()}`
+    : `Novo ${getRegimePessoaLabel(regime).toLowerCase()}`
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -299,10 +442,10 @@ function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador,
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>{isEdit ? 'Editar prestador' : 'Novo prestador'}</h2>
+        <h2>{tituloLabel}</h2>
         {isEdit && colaborador && (
           <div style={{ fontSize: 12, color: 'var(--mut)', marginBottom: 8 }}>
-            Para editar todos os campos (endereço, bancários, família, documentos, etc.) abra o detalhe completo do prestador.
+            Para editar todos os campos (endereço, bancários, família, documentos, etc.) abra o detalhe completo.
           </div>
         )}
         <form onSubmit={handleSubmit} className="row-gap-14">
@@ -325,8 +468,8 @@ function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador,
             <div className="field">
               <label>Regime *</label>
               <select value={regime} onChange={(e) => setRegime(e.target.value as RegimeTrabalho)}>
-                <option value="clt">CLT</option>
-                <option value="pj">PJ</option>
+                <option value="clt">CLT (Colaborador)</option>
+                <option value="pj">PJ (Prestador)</option>
                 <option value="estagio">Estágio</option>
                 <option value="freelancer">Freelancer</option>
               </select>
@@ -356,6 +499,283 @@ function ColaboradorModal({ colaborador, onClose }: { colaborador?: Colaborador,
           <div className="hstack" style={{ justifyContent: 'flex-end' }}>
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Salvando…' : (isEdit ? 'Salvar' : 'Cadastrar')}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+// ─── Modais de movimentação (PR #7) ─────────────────────────────────
+//
+// Espelha a UX do gestor (gestor/Equipe.tsx). Aqui o solicitante é o RH
+// (mesmo schema com `solicitanteUid`/`solicitanteNome`). Usa
+// getRegimePessoaLabel() pra deixar bem claro PJ vs CLT no copy.
+
+function SolicitarDesligamentoModal({ colaborador, profileUid, profileName, onClose }: {
+  colaborador: Colaborador
+  profileUid: string
+  profileName: string
+  onClose: () => void
+}) {
+  const tipoPessoa = getRegimePessoaLabel(colaborador.regime).toLowerCase()
+  const [tipo, setTipo] = useState<Desligamento['tipo']>('voluntario')
+  const [motivo, setMotivo] = useState('')
+  const [dataPrevista, setDataPrevista] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() + 30)
+    return d.toISOString().slice(0, 10)
+  })
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    if (!motivo.trim()) { setErr('Informe o motivo do desligamento.'); return }
+    setSaving(true); setErr(null)
+    try {
+      const dataTs = Timestamp.fromDate(new Date(dataPrevista + 'T00:00:00'))
+      const novo = {
+        colaboradorId: colaborador.id,
+        colaboradorNome: colaborador.nome,
+        empresa: colaborador.empresa,
+        cargo: colaborador.cargo,
+        motivo: motivo.trim(),
+        tipo,
+        dataPrevista: dataTs,
+        solicitanteUid: profileUid,
+        solicitanteNome: profileName,
+        status: 'pendente' as const,
+        criadoEm: serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      }
+      const ref = await addDoc(collection(db, 'desligamentos'), novo)
+      await updateDoc(doc(db, 'colaboradores', colaborador.id), {
+        desligamentoSolicitadoId: ref.id,
+        updatedAt: serverTimestamp(),
+      })
+      onClose()
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Erro ao solicitar desligamento.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Solicitar desligamento</h2>
+        <p>
+          Solicitar desligamento do {tipoPessoa} <b>{colaborador.nome}</b>. A solicitação fica
+          em "Desligamentos" para o RH concluir (data efetiva, anexos, etc.).
+        </p>
+        <form onSubmit={handleSubmit} className="row-gap-14">
+          {err && <div className="error-text">{err}</div>}
+          <div className="form-grid">
+            <div className="field">
+              <label>Tipo *</label>
+              <select value={tipo} onChange={(e) => setTipo(e.target.value as Desligamento['tipo'])}>
+                {Object.entries(DESLIGAMENTO_TIPO_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Data prevista *</label>
+              <input type="date" value={dataPrevista} onChange={(e) => setDataPrevista(e.target.value)} required />
+            </div>
+            <div className="field full">
+              <label>Motivo / contexto *</label>
+              <textarea
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Ex.: Pediu demissão, conversado em 1:1; último dia em 30/05."
+                required
+                rows={4}
+              />
+            </div>
+          </div>
+          <div className="hstack" style={{ justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={saving} style={{ background: 'var(--bad)' }}>
+              {saving ? 'Solicitando…' : 'Solicitar desligamento'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function SolicitarSuspensaoModal({ colaborador, profileUid, profileName, onClose }: {
+  colaborador: Colaborador
+  profileUid: string
+  profileName: string
+  onClose: () => void
+}) {
+  const tipoPessoa = getRegimePessoaLabel(colaborador.regime).toLowerCase()
+  const [tipo, setTipo] = useState<Suspensao['tipo']>('doenca')
+  const [motivo, setMotivo] = useState('')
+  const [inicio, setInicio] = useState(() => new Date().toISOString().slice(0, 10))
+  const [fim, setFim] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setErr(null)
+    try {
+      const inicioTs = Timestamp.fromDate(new Date(inicio + 'T00:00:00'))
+      const fimTs = fim ? Timestamp.fromDate(new Date(fim + 'T00:00:00')) : null
+      const nova: Suspensao = {
+        id: `sus-${Date.now()}`,
+        tipo,
+        motivo: motivo.trim(),
+        inicio: inicioTs,
+        ...(fimTs ? { fim: fimTs } : {}),
+        status: fimTs ? 'encerrada' : 'ativa',
+        solicitanteUid: profileUid,
+        solicitanteNome: profileName,
+        criadoEm: Timestamp.now(),
+        ...(fimTs ? { encerradoEm: Timestamp.now() } : {}),
+      }
+      await updateDoc(doc(db, 'colaboradores', colaborador.id), {
+        suspensoes: arrayUnion(nova),
+        ...(nova.status === 'ativa' && inicioTs.toMillis() <= Date.now()
+          ? { status: 'afastado' as const }
+          : {}),
+        updatedAt: serverTimestamp(),
+      })
+      onClose()
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Erro ao registrar suspensão.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Solicitar suspensão de contrato</h2>
+        <p>
+          Registrar afastamento temporário do {tipoPessoa} <b>{colaborador.nome}</b>. A movimentação
+          fica no histórico do cadastro.
+        </p>
+        <form onSubmit={handleSubmit} className="row-gap-14">
+          {err && <div className="error-text">{err}</div>}
+          <div className="form-grid">
+            <div className="field">
+              <label>Tipo *</label>
+              <select value={tipo} onChange={(e) => setTipo(e.target.value as Suspensao['tipo'])}>
+                {Object.entries(SUSPENSAO_TIPO_LABEL).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Início *</label>
+              <input type="date" value={inicio} onChange={(e) => setInicio(e.target.value)} required />
+            </div>
+            <div className="field">
+              <label>Fim previsto (opcional)</label>
+              <input type="date" value={fim} onChange={(e) => setFim(e.target.value)} />
+              <small style={{ fontSize: 11, color: 'var(--mut)' }}>
+                Em branco = ainda não sabe. Encerre depois pelo botão "Encerrar suspensão".
+              </small>
+            </div>
+            <div className="field full">
+              <label>Motivo / observações *</label>
+              <textarea
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder="Ex.: Atestado médico, INSS, licença particular, etc."
+                required
+                rows={4}
+              />
+            </div>
+          </div>
+          <div className="hstack" style={{ justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Registrando…' : 'Registrar suspensão'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function EncerrarSuspensaoModal({ colaborador, suspensao, onClose }: {
+  colaborador: Colaborador
+  suspensao: Suspensao
+  onClose: () => void
+}) {
+  const [fim, setFim] = useState(() => new Date().toISOString().slice(0, 10))
+  const [observacao, setObservacao] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault()
+    setSaving(true); setErr(null)
+    try {
+      const fimTs = Timestamp.fromDate(new Date(fim + 'T00:00:00'))
+      const novaLista = (colaborador.suspensoes || []).map(s => {
+        if (s.id !== suspensao.id) return s
+        return {
+          ...s,
+          fim: fimTs,
+          status: 'encerrada' as const,
+          encerradoEm: Timestamp.now(),
+          ...(observacao.trim() ? { observacaoEncerramento: observacao.trim() } : {}),
+        }
+      })
+      await updateDoc(doc(db, 'colaboradores', colaborador.id), {
+        suspensoes: novaLista,
+        // Se a pessoa estava como afastado/contrato_suspenso por causa
+        // dessa suspensão, volta pra ativo.
+        ...(colaborador.status === 'afastado' || colaborador.status === 'contrato_suspenso'
+          ? { status: 'ativo' as const }
+          : {}),
+        updatedAt: serverTimestamp(),
+      })
+      onClose()
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : 'Erro ao encerrar suspensão.')
+    } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h2>Encerrar suspensão</h2>
+        <p>
+          Encerrar a suspensão de <b>{colaborador.nome}</b> iniciada em{' '}
+          <b>{formatDate(suspensao.inicio)}</b>.
+        </p>
+        <form onSubmit={handleSubmit} className="row-gap-14">
+          {err && <div className="error-text">{err}</div>}
+          <div className="form-grid">
+            <div className="field">
+              <label>Data de encerramento *</label>
+              <input type="date" value={fim} onChange={(e) => setFim(e.target.value)} required />
+            </div>
+            <div className="field full">
+              <label>Observação (opcional)</label>
+              <textarea
+                value={observacao}
+                onChange={(e) => setObservacao(e.target.value)}
+                placeholder="Ex.: Retornou após alta médica."
+                rows={3}
+              />
+            </div>
+          </div>
+          <div className="hstack" style={{ justifyContent: 'flex-end' }}>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn btn-primary" disabled={saving}>
+              {saving ? 'Encerrando…' : 'Encerrar suspensão'}
+            </button>
           </div>
         </form>
       </div>

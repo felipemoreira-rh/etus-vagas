@@ -106,14 +106,14 @@ export default function Desligamentos() {
             <div className="empty">
               <div className="empty-ico">⤬</div>
               <div className="empty-ttl">Nenhum desligamento {statusF !== 'todos' ? 'com esse filtro' : 'registrado'}</div>
-              <div className="empty-sub">Os gestores podem solicitar desligamentos pela tela "Meu time".</div>
+              <div className="empty-sub">Gestores e o RH podem solicitar desligamentos (PJ ou CLT) pelas listas correspondentes.</div>
             </div>
           ) : (
             <div className="panel-scroll">
               <table>
                 <thead>
                   <tr>
-                    <th>Prestador</th>
+                    <th>Pessoa</th>
                     <th>Empresa / Cargo</th>
                     <th>Tipo</th>
                     <th>Data prevista</th>
@@ -198,7 +198,7 @@ function DesligamentoModal({ d, onClose }: { d: Desligamento; onClose: () => voi
         observacoesRh: observacoesRh || null,
         atualizadoEm: serverTimestamp(),
       })
-      // Atualiza o prestador: status=desligado, dataDemissao
+      // Atualiza o cadastro (PJ ou CLT): status=desligado, dataDemissao
       await updateDoc(doc(db, 'colaboradores', d.colaboradorId), {
         status: 'desligado',
         dataDemissao: dataTs,
@@ -277,7 +277,7 @@ function DesligamentoModal({ d, onClose }: { d: Desligamento; onClose: () => voi
               <label>Data efetiva de desligamento *</label>
               <input type="date" value={dataEfetiva} onChange={(e) => setDataEfetiva(e.target.value)} required />
               <small style={{ fontSize: 11, color: 'var(--mut)' }}>
-                Marca o prestador como "desligado" e registra essa data como data de demissão.
+                Marca o cadastro (PJ ou CLT) como "desligado" e registra essa data como data de demissão.
               </small>
             </div>
           )}

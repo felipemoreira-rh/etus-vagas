@@ -16,7 +16,7 @@ import {
   CONTA_TIPO_LABEL, EMPRESA_OPTIONS, ESTADO_CIVIL_LABEL, FORMACAO_LABEL,
   GENERO_LABEL, NIVEL_IDIOMA_LABEL, PIX_TIPO_LABEL, PRESTADOR_STATUS_LABEL,
   RACA_LABEL, REGIME_TRABALHO_LABEL, SUSPENSAO_TIPO_LABEL, TIPO_PAGAMENTO_LABEL,
-  TIPO_UNIAO_LABEL,
+  TIPO_UNIAO_LABEL, getRegimePessoaLabel,
 } from '../../types'
 
 // Página de detalhe do prestador (a.k.a. colaborador). Layout em tabs com
@@ -91,7 +91,7 @@ export default function PrestadorDetalhe() {
   if (loading) {
     return (
       <>
-        <Topbar title="Prestador" icon="◉" />
+        <Topbar title="Cadastro" icon="◉" />
         <div className="content"><div className="empty-state">Carregando…</div></div>
       </>
     )
@@ -99,11 +99,11 @@ export default function PrestadorDetalhe() {
   if (!p) {
     return (
       <>
-        <Topbar title="Prestador" icon="◉" />
+        <Topbar title="Cadastro" icon="◉" />
         <div className="content">
           <div className="empty">
             <div className="empty-ico">◉</div>
-            <div className="empty-ttl">Prestador não encontrado</div>
+            <div className="empty-ttl">Cadastro não encontrado</div>
             <div className="empty-sub">
               <Link to="/dp/colaboradores" style={{ color: 'var(--g600)' }}>← Voltar para lista</Link>
             </div>
@@ -113,13 +113,21 @@ export default function PrestadorDetalhe() {
     )
   }
 
+  // Rótulo da pessoa varia conforme regime: PJ → Prestador, CLT → Colaborador.
+  const labelPessoa = getRegimePessoaLabel(p.regime)
+  // Volta pra lista filtrada por regime, pra continuar na mesma "aba" do menu.
+  const voltarHref = p.regime === 'pj'
+    ? '/dp/colaboradores?regime=pj'
+    : '/dp/colaboradores?regime=clt'
+  const iconePessoa = p.regime === 'pj' ? '◐' : '◉'
+
   return (
     <>
       <Topbar
-        title={p.nome}
-        icon="◉"
+        title={`${p.nome} · ${labelPessoa}`}
+        icon={iconePessoa}
         actions={
-          <button className="tbtn" onClick={() => navigate('/dp/colaboradores')}>← Voltar</button>
+          <button className="tbtn" onClick={() => navigate(voltarHref)}>← Voltar</button>
         }
       />
       <div className="content">

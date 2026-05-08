@@ -475,6 +475,7 @@ function EstagiarioModal({ estagiario, onClose }: { estagiario?: Estagiario, onC
 // Cria um colaborador a partir do estagiário e marca o estágio como
 // 'efetivado'. Usuário pode escolher regime (CLT ou PJ) e cargo final.
 function EfetivarModal({ estagiario, onClose }: { estagiario: Estagiario, onClose: () => void }) {
+  const { profile } = useAuth()
   const [regime, setRegime] = useState<RegimeTrabalho>('clt')
   const [cargo, setCargo] = useState(estagiario.area || '')
   const [salario, setSalario] = useState<number | ''>('')
@@ -490,10 +491,40 @@ function EfetivarModal({ estagiario, onClose }: { estagiario: Estagiario, onClos
     try {
       const dataAdmTs = Timestamp.fromDate(new Date(dataAdmissao + 'T00:00:00'))
 
+      // PR #7: ao efetivar, gera entrada imutável no histórico de cargo
+      // do novo colaborador. Esse histórico nunca é editado depois — só
+      // recebe `arrayUnion` em mudanças futuras (igual o resto do app).
+      // Pegamos o cargo "anterior" como o cargo de estágio (área) pra
+      // dar contexto na linha do tempo.
+      const cargoFinal = (cargo || estagiario.area).trim()
+      const cargoAnterior = `Estagiário – ${estagiario.area}`.trim()
+      const registradoPorUid = profile?.uid || 'system'
+      const registradoPorNome = profile?.name || profile?.email || 'Sistema'
+      const entradaHistoricoCargo = {
+        id: `cargo-efet-${Date.now()}`,
+        cargoAnterior,
+        cargoNovo: cargoFinal,
+        motivo: 'Efetivação após estágio',
+        vigenciaEm: dataAdmTs,
+        registradoEm: Timestamp.now(),
+        registradoPorUid,
+        registradoPorNome,
+      }
+      // Histórico de salário: só registra se RH informou um valor.
+      const entradaHistoricoSalario = typeof salario === 'number' ? {
+        id: `sal-efet-${Date.now()}`,
+        salarioNovo: salario,
+        motivo: 'Efetivação após estágio',
+        vigenciaEm: dataAdmTs,
+        registradoEm: Timestamp.now(),
+        registradoPorUid,
+        registradoPorNome,
+      } : null
+
       // Cria colaborador.
       const colabPayload: Record<string, unknown> = {
         nome: estagiario.nome,
-        cargo: cargo || estagiario.area,
+        cargo: cargoFinal,
         area: estagiario.area,
         empresa: estagiario.empresa,
         regime,
@@ -509,6 +540,8 @@ function EfetivarModal({ estagiario, onClose }: { estagiario: Estagiario, onClos
         ...(estagiario.indicadoPorNome ? { indicadoPorNome: estagiario.indicadoPorNome } : {}),
         ...(typeof salario === 'number' ? { salario } : {}),
         ...(observacoes.trim() ? { observacoes: observacoes.trim() } : {}),
+        historicoCargo: [entradaHistoricoCargo],
+        ...(entradaHistoricoSalario ? { historicoSalario: [entradaHistoricoSalario] } : {}),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }
