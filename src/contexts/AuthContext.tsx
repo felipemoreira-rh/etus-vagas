@@ -16,6 +16,9 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import type { Role, UserProfile } from '../types'
+import { isEmailAllowed } from '../utils/authAllowlist'
+
+export const BLOCKED_USERS_COLLECTION = 'blocked_users'
 
 interface AuthContextValue {
   user: User | null
@@ -45,14 +48,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(u)
       if (u) {
         try {
-          const snap = await getDoc(doc(db, 'users', u.uid))
+          const ref = doc(db, 'users', u.uid)
+          const snap = await getDoc(ref)
           if (snap.exists()) {
             setProfile({ uid: u.uid, ...(snap.data() as Omit<UserProfile, 'uid'>) })
           } else {
-            setProfile(null)
+            // Primeiro login via Google: o doc ainda não existe — signInWithPopup
+            // cria só a conta no Firebase Auth. Criamos aqui, dentro do próprio
+            // callback de onAuthStateChanged, pra evitar a race com Login.tsx.
+            // Se o doc fosse criado depois, o listener já teria lido null e
+            // o RoleRedirect mandaria o usuário de volta pro /login.
+            const isGoogle = u.providerData.some((p) => p.providerId === 'google.com')
+            if (isGoogle && u.email && isEmailAllowed(u.email)) {
+              // Antes de re-criar o doc, verifica se esse uid foi bloqueado
+              // pelo RH (fluxo "Remover acesso" na tela Usuários). Se
+              // estiver bloqueado, fazemos signOut e deixamos profile=null
+              // pra evitar que um usuário cujo acesso foi revogado
+              // reconquiste acesso só clicando em "Entrar com Google".
+              const blockedRef = doc(db, BLOCKED_USERS_COLLECTION, u.uid)
+              const blockedSnap = await getDoc(blockedRef)
+              if (blockedSnap.exists()) {
+                await signOut(auth)
+                setProfile(null)
+              } else {
+                const defaults = {
+                  email: u.email,
+                  name: u.displayName ?? u.email,
+                  role: 'gestor' as Role,
+                  empresa: '',
+                  area: '',
+                  createdAt: serverTimestamp(),
+                }
+                await setDoc(ref, defaults)
+                setProfile({
+                  uid: u.uid,
+                  email: defaults.email,
+                  name: defaults.name,
+                  role: defaults.role,
+                  empresa: defaults.empresa,
+                  area: defaults.area,
+                })
+              }
+            } else {
+              setProfile(null)
+            }
           }
         } catch (err) {
-           
           console.error('Erro ao carregar perfil:', err)
           setProfile(null)
         }
