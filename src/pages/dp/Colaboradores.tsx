@@ -227,10 +227,10 @@ export default function Colaboradores() {
                               type="button"
                               className="tbtn"
                               onClick={() => excluir(c)}
-                              title="Excluir"
+                              title="Excluir cadastro"
                               style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
                             >
-                              ✕
+                              🗑
                             </button>
                           </div>
                         </td>

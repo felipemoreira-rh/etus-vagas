@@ -167,10 +167,14 @@ export default function Estagiarios() {
                     return (
                       <tr key={e.id}>
                         <td>
-                          <Link to={`/dp/estagiarios/${e.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                            <div className="tdm" style={{ color: 'var(--g600)' }}>{e.nome}</div>
-                            <div className="tds">{e.email || '—'}</div>
+                          {/* Igual Colaboradores: nome é link, ainda assim mantemos
+                              o botão ▸ Abrir nas ações para deixar bem explícito
+                              que existe uma página de detalhe completa (cadastro
+                              de endereço, bancários, família, documentos, etc.). */}
+                          <Link to={`/dp/estagiarios/${e.id}`} className="tdm" style={{ textDecoration: 'none', color: 'var(--fg)' }}>
+                            {e.nome}
                           </Link>
+                          <div className="tds">{e.email || '—'}</div>
                         </td>
                         <td style={{ fontSize: 12 }}>{e.curso || '—'} · {e.instituicao || '—'}</td>
                         <td style={{ fontSize: 12, color: 'var(--mut)' }}>{e.area}</td>
@@ -192,6 +196,10 @@ export default function Estagiarios() {
                         </td>
                         <td>
                           <div className="hstack" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                            {/* ▸ Abrir cadastro completo (mesma UX da lista de prestadores). */}
+                            <Link to={`/dp/estagiarios/${e.id}`} className="tbtn" title="Abrir cadastro completo" style={{ height: 26 }}>
+                              ▸
+                            </Link>
                             {e.status === 'ativo' && (
                               <button
                                 type="button"
@@ -204,14 +212,17 @@ export default function Estagiarios() {
                               </button>
                             )}
                             {e.status === 'ativo' && !e.desligamentoSolicitadoId && (
+                              // Botão de desligar usa texto "Desligar" + cor vermelha
+                              // pra não ser confundido com o botão de excluir cadastro
+                              // (que agora tem ícone de lixeira).
                               <button
                                 type="button"
                                 className="tbtn"
                                 onClick={() => setDesligando(e)}
                                 title="Solicitar desligamento"
-                                style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                                style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)', fontSize: 11 }}
                               >
-                                ⤬
+                                ⤴ Desligar
                               </button>
                             )}
                             {e.desligamentoSolicitadoId && (
@@ -223,7 +234,7 @@ export default function Estagiarios() {
                               type="button"
                               className="tbtn"
                               onClick={() => setEditing(e)}
-                              title="Editar"
+                              title="Editar rápido"
                               style={{ height: 26 }}
                             >
                               ✎
@@ -232,10 +243,10 @@ export default function Estagiarios() {
                               type="button"
                               className="tbtn"
                               onClick={() => excluir(e)}
-                              title="Excluir"
+                              title="Excluir cadastro"
                               style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
                             >
-                              ✕
+                              🗑
                             </button>
                           </div>
                         </td>
