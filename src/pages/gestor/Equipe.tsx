@@ -1,12 +1,75 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { Link } from 'react-router-dom'
 import {
   addDoc, arrayUnion, collection, doc, onSnapshot, query, serverTimestamp, Timestamp, updateDoc, where,
 } from 'firebase/firestore'
 import { db } from '../../firebase'
 import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
-import type { Colaborador, Desligamento, Suspensao } from '../../types'
-import { DESLIGAMENTO_TIPO_LABEL, PRESTADOR_STATUS_LABEL, REGIME_TRABALHO_LABEL, SUSPENSAO_TIPO_LABEL, SUSPENSAO_TIPO_OPTIONS } from '../../types'
+import type { Colaborador, Desligamento, Estagiario, Suspensao } from '../../types'
+import {
+  DESLIGAMENTO_TIPO_LABEL,
+  ESTAGIARIO_STATUS_LABEL,
+  PRESTADOR_STATUS_LABEL,
+  REGIME_TRABALHO_LABEL,
+  SUSPENSAO_TIPO_LABEL,
+  SUSPENSAO_TIPO_OPTIONS,
+} from '../../types'
+
+// O "Meu time" do gestor agrupa CLT/PJ/Freelancer (`colaboradores`) +
+// estagiários (`estagiarios`). As coleções têm shapes diferentes, então
+// projetamos pra uma view unificada com as colunas que importam pro gestor.
+type TeamMember = {
+  id: string
+  kind: 'colab' | 'estag'
+  raw: Colaborador | Estagiario
+  nome: string
+  email?: string
+  cargo: string
+  area: string
+  regimeLabel: string
+  dataInicio: Timestamp | undefined
+  statusKey: string
+  statusLabel: string
+  statusBdg: 'ok' | 'warn' | 'info' | 'bad'
+  detailHref: string
+}
+
+function toTeamMemberColab(c: Colaborador): TeamMember {
+  const statusBdg: TeamMember['statusBdg'] =
+    c.status === 'ativo' ? 'ok'
+    : c.status === 'ferias' || c.status === 'contrato_suspenso' ? 'warn'
+    : c.status === 'afastado' ? 'info' : 'bad'
+  return {
+    id: c.id, kind: 'colab', raw: c,
+    nome: c.nome, email: c.email,
+    cargo: c.cargo, area: c.area,
+    regimeLabel: REGIME_TRABALHO_LABEL[c.regime],
+    dataInicio: c.dataAdmissao,
+    statusKey: c.status,
+    statusLabel: PRESTADOR_STATUS_LABEL[c.status],
+    statusBdg,
+    detailHref: `/dp/colaboradores/${c.id}`,
+  }
+}
+
+function toTeamMemberEstag(e: Estagiario): TeamMember {
+  const statusBdg: TeamMember['statusBdg'] =
+    e.status === 'ativo' || e.status === 'efetivado' ? 'ok'
+    : e.status === 'contrato_suspenso' ? 'warn' : 'bad'
+  return {
+    id: e.id, kind: 'estag', raw: e,
+    nome: e.nome, email: e.email,
+    cargo: e.curso || 'Estagiário',
+    area: e.area,
+    regimeLabel: REGIME_TRABALHO_LABEL.estagio,
+    dataInicio: e.dataInicio,
+    statusKey: e.status,
+    statusLabel: ESTAGIARIO_STATUS_LABEL[e.status],
+    statusBdg,
+    detailHref: `/dp/estagiarios/${e.id}`,
+  }
+}
 
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
@@ -20,17 +83,21 @@ function suspensaoAtiva(c: Colaborador): Suspensao | null {
 
 export default function GestorEquipe() {
   const { profile } = useAuth()
-  const [items, setItems] = useState<Colaborador[]>([])
-  const [loading, setLoading] = useState(true)
+  const [colabs, setColabs] = useState<Colaborador[]>([])
+  const [estags, setEstags] = useState<Estagiario[]>([])
+  const [loadingC, setLoadingC] = useState(true)
+  const [loadingE, setLoadingE] = useState(true)
   const [search, setSearch] = useState('')
   const [openSuspensao, setOpenSuspensao] = useState<Colaborador | null>(null)
   const [encerrando, setEncerrando] = useState<{ colab: Colaborador; suspensao: Suspensao } | null>(null)
   const [desligando, setDesligando] = useState<Colaborador | null>(null)
 
+  const loading = loadingC || loadingE
+
   useEffect(() => {
     if (!profile?.uid) return
-    // Lista só os colaboradores do próprio gestor (rule do Firestore já filtra,
-    // mas usar where aqui economiza tráfego e garante ordenação).
+    // Colaboradores do gestor (rule do Firestore já filtra; usar where aqui
+    // economiza tráfego e garante ordenação).
     const q = query(
       collection(db, 'colaboradores'),
       where('gestorUid', '==', profile.uid),
@@ -38,21 +105,48 @@ export default function GestorEquipe() {
     const unsub = onSnapshot(q, (s) => {
       const list = s.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Colaborador, 'id'>) }))
       list.sort((a, b) => a.nome.localeCompare(b.nome))
-      setItems(list)
-      setLoading(false)
-    }, () => setLoading(false))
+      setColabs(list)
+      setLoadingC(false)
+    }, () => setLoadingC(false))
     return unsub
   }, [profile?.uid])
 
-  const filtered = useMemo(() => {
-    if (!search) return items
-    const s = search.toLowerCase()
-    return items.filter(c =>
-      c.nome.toLowerCase().includes(s) ||
-      c.cargo.toLowerCase().includes(s) ||
-      c.area.toLowerCase().includes(s),
+  // Estagiários do gestor — mesma lógica. Quando o estágio termina via
+  // efetivação (vira PJ/CLT), um Colaborador é criado e aparece junto na
+  // mesma listagem. Estágios em si ficam aqui durante a vigência.
+  useEffect(() => {
+    if (!profile?.uid) return
+    const q = query(
+      collection(db, 'estagiarios'),
+      where('gestorUid', '==', profile.uid),
     )
-  }, [items, search])
+    const unsub = onSnapshot(q, (s) => {
+      const list = s.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Estagiario, 'id'>) }))
+      list.sort((a, b) => a.nome.localeCompare(b.nome))
+      setEstags(list)
+      setLoadingE(false)
+    }, () => setLoadingE(false))
+    return unsub
+  }, [profile?.uid])
+
+  const members: TeamMember[] = useMemo(() => {
+    const merged: TeamMember[] = [
+      ...colabs.map(toTeamMemberColab),
+      ...estags.map(toTeamMemberEstag),
+    ]
+    merged.sort((a, b) => a.nome.localeCompare(b.nome))
+    return merged
+  }, [colabs, estags])
+
+  const filtered = useMemo(() => {
+    if (!search) return members
+    const s = search.toLowerCase()
+    return members.filter(m =>
+      m.nome.toLowerCase().includes(s) ||
+      m.cargo.toLowerCase().includes(s) ||
+      m.area.toLowerCase().includes(s),
+    )
+  }, [members, search])
 
   return (
     <>
@@ -97,24 +191,26 @@ export default function GestorEquipe() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(c => {
-                    const ativa = suspensaoAtiva(c)
-                    const statusBdg = c.status === 'ativo' ? 'ok'
-                      : c.status === 'ferias' || c.status === 'contrato_suspenso' ? 'warn'
-                      : c.status === 'afastado' ? 'info' : 'bad'
-                    const aguardandoDesligamento = !!c.desligamentoSolicitadoId
+                  {filtered.map(m => {
+                    // Suspensão e desligamento são fluxos só de colaboradores
+                    // (CLT/PJ/Freelancer). Estagiários aparecem na lista pra
+                    // visibilidade do gestor, mas o fluxo formal de afastamento
+                    // do estagiário continua passando pelo RH em DP.
+                    const colab = m.kind === 'colab' ? (m.raw as Colaborador) : null
+                    const ativa = colab ? suspensaoAtiva(colab) : null
+                    const aguardandoDesligamento = colab ? !!colab.desligamentoSolicitadoId : false
                     return (
-                      <tr key={c.id}>
+                      <tr key={`${m.kind}-${m.id}`}>
                         <td>
-                          <div className="tdm">{c.nome}</div>
-                          <div className="tds">{c.email || '—'}</div>
+                          <div className="tdm">{m.nome}</div>
+                          <div className="tds">{m.email || '—'}</div>
                         </td>
-                        <td style={{ fontSize: 12 }}>{c.cargo}</td>
-                        <td style={{ fontSize: 12, color: 'var(--mut)' }}>{c.area}</td>
-                        <td style={{ fontSize: 12 }}>{REGIME_TRABALHO_LABEL[c.regime]}</td>
-                        <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(c.dataAdmissao)}</td>
+                        <td style={{ fontSize: 12 }}>{m.cargo}</td>
+                        <td style={{ fontSize: 12, color: 'var(--mut)' }}>{m.area}</td>
+                        <td style={{ fontSize: 12 }}>{m.regimeLabel}</td>
+                        <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(m.dataInicio)}</td>
                         <td>
-                          <span className={`bdg ${statusBdg}`}>{PRESTADOR_STATUS_LABEL[c.status]}</span>
+                          <span className={`bdg ${m.statusBdg}`}>{m.statusLabel}</span>
                           {aguardandoDesligamento && (
                             <div style={{ fontSize: 10, color: 'var(--warn)', marginTop: 3 }}>
                               Desligamento em análise pelo RH
@@ -123,7 +219,15 @@ export default function GestorEquipe() {
                         </td>
                         <td>
                           <div className="vstack" style={{ gap: 4 }}>
-                            {ativa ? (
+                            <Link
+                              to={m.detailHref}
+                              className="tbtn"
+                              style={{ height: 26 }}
+                              title="Abrir cadastro"
+                            >
+                              ▸ Abrir
+                            </Link>
+                            {colab && ativa && (
                               <>
                                 <div style={{ fontSize: 11, color: 'var(--info, #2563eb)', fontWeight: 600 }}>
                                   Suspenso desde {formatDate(ativa.inicio)}
@@ -132,31 +236,39 @@ export default function GestorEquipe() {
                                   type="button"
                                   className="tbtn"
                                   style={{ height: 26 }}
-                                  onClick={() => setEncerrando({ colab: c, suspensao: ativa })}
+                                  onClick={() => setEncerrando({ colab, suspensao: ativa })}
                                 >
                                   Encerrar suspensão
                                 </button>
                               </>
-                            ) : (
+                            )}
+                            {colab && !ativa && (
                               <button
                                 type="button"
                                 className="tbtn"
                                 style={{ height: 26 }}
-                                onClick={() => setOpenSuspensao(c)}
-                                disabled={c.status === 'desligado'}
+                                onClick={() => setOpenSuspensao(colab)}
+                                disabled={colab.status === 'desligado'}
                               >
                                 Solicitar suspensão
                               </button>
                             )}
-                            <button
-                              type="button"
-                              className="tbtn"
-                              style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
-                              onClick={() => setDesligando(c)}
-                              disabled={c.status === 'desligado' || aguardandoDesligamento}
-                            >
-                              Solicitar desligamento
-                            </button>
+                            {colab && (
+                              <button
+                                type="button"
+                                className="tbtn"
+                                style={{ height: 26, color: 'var(--bad)', borderColor: 'var(--bad-bd)' }}
+                                onClick={() => setDesligando(colab)}
+                                disabled={colab.status === 'desligado' || aguardandoDesligamento}
+                              >
+                                Solicitar desligamento
+                              </button>
+                            )}
+                            {!colab && (
+                              <div style={{ fontSize: 10, color: 'var(--mut)' }}>
+                                Movimentações de estagiário são feitas pelo RH.
+                              </div>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -171,7 +283,7 @@ export default function GestorEquipe() {
         {/* Histórico curto: lista as últimas suspensões (ativas + encerradas)
             do time todo, pra dar visibilidade ao próprio gestor. O RH tem
             uma visão completa em DP → Colaboradores. */}
-        <HistoricoCurto items={items} />
+        <HistoricoCurto items={colabs} />
       </div>
 
       {openSuspensao && profile && (

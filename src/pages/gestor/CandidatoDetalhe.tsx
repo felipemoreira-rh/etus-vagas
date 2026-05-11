@@ -1,15 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import {
-  arrayUnion, doc, onSnapshot, serverTimestamp, Timestamp, updateDoc,
-} from 'firebase/firestore'
+import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../../firebase'
-import { useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
 import ScheduleInterviewButton from '../../components/ScheduleInterviewButton'
 import { formatBytes } from '../../utils/storage'
-import type { Candidato, CandidatoFase, CandidatoMovimentacao } from '../../types'
-import { CANDIDATO_FASE_LABEL, CANDIDATO_FASE_ORDER, CANDIDATO_ORIGEM_LABEL } from '../../types'
+import type { Candidato } from '../../types'
+import { CANDIDATO_FASE_LABEL, CANDIDATO_ORIGEM_LABEL } from '../../types'
 
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
@@ -18,12 +15,8 @@ function formatDate(ts?: { toDate: () => Date } | null) {
 
 export default function GestorCandidatoDetalhe() {
   const { id } = useParams()
-  const { profile } = useAuth()
   const [c, setC] = useState<Candidato | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [novaFase, setNovaFase] = useState<CandidatoFase>('triagem')
-  const [nota, setNota] = useState('')
-  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -33,36 +26,11 @@ export default function GestorCandidatoDetalhe() {
         else {
           const data = { id: snap.id, ...(snap.data() as Omit<Candidato, 'id'>) }
           setC(data)
-          setNovaFase(data.fase)
         }
       },
       (e) => setErr(e.message))
     return unsub
   }, [id])
-
-  async function movimentar(e: FormEvent) {
-    e.preventDefault()
-    if (!c || !profile) return
-    setSaving(true)
-    try {
-      // Firestore rejeita campos com valor `undefined`, então só incluímos
-      // `nota` se tiver conteúdo real.
-      const mov: CandidatoMovimentacao = {
-        at: Timestamp.now(),
-        byUid: profile.uid, byName: profile.name,
-        fromFase: c.fase, toFase: novaFase,
-        ...(nota.trim() ? { nota: nota.trim() } : {}),
-      }
-      await updateDoc(doc(db, 'candidatos', c.id), {
-        fase: novaFase,
-        updatedAt: serverTimestamp(),
-        historico: arrayUnion(mov),
-      })
-      setNota('')
-    } catch (e2) {
-      setErr(e2 instanceof Error ? e2.message : 'Erro ao salvar.')
-    } finally { setSaving(false) }
-  }
 
   return (
     <>
@@ -103,23 +71,20 @@ export default function GestorCandidatoDetalhe() {
               </div>
 
               <div className="panel">
-                <h3>Movimentar</h3>
+                <h3>Acompanhamento</h3>
                 <p style={{ color: 'var(--mut)', fontSize: 12, marginBottom: 10 }}>
-                  Você pode mover o candidato entre fases (aprovar, reprovar, marcar entrevista). O RH é notificado automaticamente.
+                  A movimentação do candidato entre fases (aprovar, reprovar, agendar entrevista,
+                  fechar proposta) é conduzida pelo RH. Você pode acompanhar a evolução aqui,
+                  agendar entrevistas no botão acima e deixar o feedback diretamente com o RH.
                 </p>
-                <form onSubmit={movimentar} className="row-gap-10">
-                  <div className="field">
-                    <label>Nova fase</label>
-                    <select value={novaFase} onChange={(e) => setNovaFase(e.target.value as CandidatoFase)}>
-                      {CANDIDATO_FASE_ORDER.map(f => <option key={f} value={f}>{CANDIDATO_FASE_LABEL[f]}</option>)}
-                    </select>
+                {c.observacoes && (
+                  <div style={{ marginTop: 6 }}>
+                    <div style={{ fontSize: 10, textTransform: 'uppercase', color: 'var(--mut)', fontWeight: 700, marginBottom: 4 }}>
+                      Observações (RH)
+                    </div>
+                    <div style={{ fontSize: 12, whiteSpace: 'pre-wrap', color: 'var(--n700)' }}>{c.observacoes}</div>
                   </div>
-                  <div className="field">
-                    <label>Nota</label>
-                    <textarea value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Feedback, contexto da decisão…" />
-                  </div>
-                  <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Salvando…' : 'Registrar'}</button>
-                </form>
+                )}
               </div>
             </div>
 

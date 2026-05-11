@@ -159,6 +159,24 @@ export interface Vaga {
   // finalizadas e mostrar "Aberta em" + "Fechada em" no detalhe.
   dataFechamento?: Timestamp
   diasAberta?: number
+
+  // Solicitação de cancelamento aberta pelo gestor. O gestor não consegue
+  // mais mover candidatos da vaga (atividade restrita ao RH) — se ele quiser
+  // encerrar a vaga, abre essa solicitação informando o motivo, e o RH
+  // aprova (vaga vai pra `cancelada`) ou recusa (volta ao status anterior).
+  cancelamentoSolicitado?: CancelamentoVagaSolicitacao
+}
+
+export interface CancelamentoVagaSolicitacao {
+  motivo: string
+  status: 'pendente' | 'aprovado' | 'recusado'
+  solicitadoEm: Timestamp
+  solicitadoPorUid: string
+  solicitadoPorNome: string
+  resolvidoEm?: Timestamp
+  resolvidoPorUid?: string
+  resolvidoPorNome?: string
+  respostaRh?: string
 }
 
 // Helper pra ler empresas de uma vaga lidando com docs antigos que tinham

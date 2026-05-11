@@ -10,7 +10,7 @@ import StatusBadge from '../../components/StatusBadge'
 import VagaDetalheView from '../shared/VagaDetalheView'
 import { NovoCandidatoModal } from './Candidatos'
 import type {
-  Candidato, CandidatoFase, Formacao, Jornada, MotivoAbertura, Nivel, Regime,
+  Candidato, CandidatoFase, CancelamentoVagaSolicitacao, Formacao, Jornada, MotivoAbertura, Nivel, Regime,
   TempoExperiencia, UserProfile, Vaga, VagaMovimentacao, VagaStatus,
 } from '../../types'
 import {
@@ -135,6 +135,56 @@ export default function VagaDetalheRh() {
     }
   }
 
+  // Resposta do RH à solicitação de cancelamento aberta pelo gestor.
+  // - Aprovar: marca a vaga como `cancelada`, grava histórico e congela SLA.
+  // - Recusar: mantém o status atual, só registra a resposta + nota.
+  async function responderCancelamento(decisao: 'aprovado' | 'recusado', respostaRh: string) {
+    if (!vaga || !profile || !vaga.cancelamentoSolicitado) return
+    setSaving(true)
+    setErr(null)
+    try {
+      const pedidoAtualizado: CancelamentoVagaSolicitacao = {
+        ...vaga.cancelamentoSolicitado,
+        status: decisao,
+        resolvidoEm: Timestamp.now(),
+        resolvidoPorUid: profile.uid,
+        resolvidoPorNome: profile.name,
+        ...(respostaRh.trim() ? { respostaRh: respostaRh.trim() } : {}),
+      }
+      const patch: Record<string, unknown> = {
+        cancelamentoSolicitado: pedidoAtualizado,
+        updatedAt: serverTimestamp(),
+      }
+      if (decisao === 'aprovado') {
+        const nota = `Cancelamento aprovado pelo RH a pedido de ${vaga.cancelamentoSolicitado.solicitadoPorNome}.`
+          + (respostaRh.trim() ? ` Resposta: ${respostaRh.trim()}` : '')
+          + ` Motivo do gestor: ${vaga.cancelamentoSolicitado.motivo}`
+        const mov: VagaMovimentacao = {
+          at: Timestamp.now(),
+          byUid: profile.uid,
+          byName: profile.name,
+          fromStatus: vaga.status,
+          toStatus: 'cancelada',
+          nota,
+        }
+        patch.status = 'cancelada'
+        patch.historico = arrayUnion(mov)
+        patch.responsavelRhUid = profile.uid
+        patch.responsavelRhNome = profile.name
+        // Congela SLA quando a vaga vai pra cancelada.
+        const ini = vaga.createdAt?.toDate?.() ?? new Date()
+        const dias = Math.max(0, Math.floor((Date.now() - ini.getTime()) / 86400000))
+        patch.dataFechamento = Timestamp.now()
+        patch.diasAberta = dias
+      }
+      await updateDoc(doc(db, 'vagas', vaga.id), patch)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Erro ao responder solicitação.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <>
       <Topbar
@@ -185,6 +235,14 @@ export default function VagaDetalheRh() {
                 </div>
               </div>
             </div>
+
+            {vaga.cancelamentoSolicitado && (
+              <CancelamentoPanel
+                pedido={vaga.cancelamentoSolicitado}
+                saving={saving}
+                onResolver={responderCancelamento}
+              />
+            )}
 
             <div className="panel">
               <h3>Movimentar status</h3>
@@ -280,6 +338,98 @@ export default function VagaDetalheRh() {
         />
       )}
     </>
+  )
+}
+
+// ────────────── Painel: solicitação de cancelamento aberta pelo gestor ──────────────
+// Aparece só quando `vaga.cancelamentoSolicitado` existe. Mostra o motivo e
+// permite ao RH aprovar (vaga vai pra cancelada) ou recusar (mantém status).
+function CancelamentoPanel({
+  pedido, saving, onResolver,
+}: {
+  pedido: CancelamentoVagaSolicitacao
+  saving: boolean
+  onResolver: (decisao: 'aprovado' | 'recusado', respostaRh: string) => void
+}) {
+  const [respostaRh, setRespostaRh] = useState('')
+
+  function fmtDate(ts?: { toDate: () => Date } | null) {
+    if (!ts) return '—'
+    try {
+      return ts.toDate().toLocaleString('pt-BR', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      })
+    } catch { return '—' }
+  }
+
+  const pendente = pedido.status === 'pendente'
+  const tone = pendente
+    ? { bg: 'var(--warn-bg, #fff8e6)', border: 'var(--warn-bd, #f0c674)', fg: 'var(--warn, #92611a)' }
+    : pedido.status === 'aprovado'
+      ? { bg: 'var(--bad-bg, #fdecec)', border: 'var(--bad-bd, #e0b4b4)', fg: 'var(--bad, #a33a3a)' }
+      : { bg: 'var(--card2)', border: 'var(--b1)', fg: 'var(--mut)' }
+  const titulo = pendente
+    ? 'Solicitação de cancelamento aberta pelo gestor'
+    : pedido.status === 'aprovado'
+      ? 'Cancelamento aprovado'
+      : 'Cancelamento recusado'
+
+  return (
+    <div
+      className="panel"
+      style={{ background: tone.bg, border: `1px solid ${tone.border}` }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <h3 style={{ margin: 0, color: tone.fg }}>{titulo}</h3>
+        <span className={`bdg ${pendente ? 'warn' : pedido.status === 'aprovado' ? 'bad' : 'info'}`}>
+          {pendente ? 'Pendente' : pedido.status === 'aprovado' ? 'Aprovado' : 'Recusado'}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--n700)', marginBottom: 4 }}>
+        <b>Solicitado em:</b> {fmtDate(pedido.solicitadoEm)} por {pedido.solicitadoPorNome}
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--n700)', marginBottom: 6 }}>
+        <b>Motivo do gestor:</b> {pedido.motivo}
+      </div>
+      {!pendente && pedido.resolvidoEm && (
+        <div style={{ fontSize: 12, color: 'var(--n700)', marginTop: 4 }}>
+          <b>Resposta do RH ({fmtDate(pedido.resolvidoEm)} — {pedido.resolvidoPorNome || '—'}):</b>{' '}
+          {pedido.respostaRh || '—'}
+        </div>
+      )}
+      {pendente && (
+        <div style={{ marginTop: 10 }}>
+          <div className="field">
+            <label>Resposta do RH (opcional)</label>
+            <input
+              value={respostaRh}
+              onChange={(e) => setRespostaRh(e.target.value)}
+              placeholder="Ex.: aprovado, vaga será reaberta em Q3…"
+            />
+          </div>
+          <div className="hstack" style={{ gap: 8, marginTop: 8, justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="tbtn"
+              disabled={saving}
+              onClick={() => onResolver('recusado', respostaRh)}
+            >
+              Recusar (manter aberta)
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={saving}
+              style={{ background: 'var(--bad)', borderColor: 'var(--bad)' }}
+              onClick={() => onResolver('aprovado', respostaRh)}
+            >
+              {saving ? 'Salvando…' : 'Aprovar cancelamento'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

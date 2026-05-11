@@ -66,12 +66,17 @@ service cloud.firestore {
       allow create: if (isRh() ||
                         (isGestor() && request.resource.data.gestorUid == request.auth.uid)) &&
                        request.resource.data.status == 'aberta';
-      // Gestor pode atualizar a própria vaga (incluindo mudar status) desde
-      // que mantenha gestorUid intacto. RH pode tudo.
+      // Movimentação da vaga (status, candidatos, fase) é restrita ao RH.
+      // Gestor da vaga só pode abrir uma solicitação de cancelamento — gravando
+      // o campo `cancelamentoSolicitado` (+ `updatedAt`). Tudo o mais (status,
+      // gestorUid, dados do edital) só RH consegue mexer.
       allow update: if isRh() ||
                        (isGestor() &&
                         resource.data.gestorUid == request.auth.uid &&
-                        request.resource.data.gestorUid == resource.data.gestorUid);
+                        request.resource.data.gestorUid == resource.data.gestorUid &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly(['cancelamentoSolicitado', 'updatedAt']));
       allow delete: if isRh();
     }
 
@@ -82,12 +87,16 @@ service cloud.firestore {
       allow read: if isRh() ||
                      (isGestor() && resource.data.vagaGestorUid == request.auth.uid);
       allow create, delete: if isRh();
-      // Gestor pode atualizar candidatos das próprias vagas (mover fase, anotar).
-      // RH pode tudo. Em ambos os casos, vagaGestorUid não pode ser alterado.
+      // Movimentação de fase do candidato é restrita ao RH. Gestor pode apenas
+      // registrar agendamentos de entrevista e anexar relatórios — os campos
+      // listados em `hasOnly` cobrem esse fluxo. vagaGestorUid não pode mudar.
       allow update: if isRh() ||
                        (isGestor() &&
                         resource.data.vagaGestorUid == request.auth.uid &&
-                        request.resource.data.vagaGestorUid == resource.data.vagaGestorUid);
+                        request.resource.data.vagaGestorUid == resource.data.vagaGestorUid &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly(['agendamentos', 'relatorios', 'updatedAt']));
     }
 
     // Onboarding: RH cria/edita. Gestor pode ler os onboardings das vagas
