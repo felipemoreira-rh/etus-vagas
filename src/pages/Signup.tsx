@@ -1,8 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import type { Role } from '../types'
-import { allowedDomainsHuman, isEmailAllowed } from '../utils/authAllowlist'
 
 export default function Signup() {
   const { signup } = useAuth()
@@ -10,7 +8,6 @@ export default function Signup() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<Role>('gestor')
   const [empresa, setEmpresa] = useState('')
   const [area, setArea] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -19,13 +16,11 @@ export default function Signup() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
-    if (!isEmailAllowed(email)) {
-      setError(`Somente e-mails corporativos (${allowedDomainsHuman()}) podem se cadastrar aqui. Fale com o RH se precisar de um acesso externo.`)
-      return
-    }
     setLoading(true)
     try {
-      await signup({ email, password, name, role, empresa, area })
+      // Toda nova conta começa como prestador. O RH faz o ajuste de perfil
+      // (gestor/RH/colaborador/estagiário) dentro do sistema depois.
+      await signup({ email, password, name, role: 'prestador', empresa, area })
       navigate('/')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Falha ao criar conta.'
@@ -80,40 +75,17 @@ export default function Signup() {
             />
           </div>
           <div className="field">
-            <label>Perfil de acesso</label>
-            <div className="radio-group">
-              {([
-                { v: 'gestor', l: 'Gestor' },
-                { v: 'rh', l: 'RH' },
-              ] as { v: Role; l: string }[]).map((opt) => (
-                <label
-                  key={opt.v}
-                  className={'radio-option' + (role === opt.v ? ' selected' : '')}
-                >
-                  <input
-                    type="radio"
-                    name="role"
-                    value={opt.v}
-                    checked={role === opt.v}
-                    onChange={() => setRole(opt.v)}
-                  />
-                  {opt.l}
-                </label>
-              ))}
-            </div>
-            <span className="hint">
-              O acesso de RH deve ser aprovado internamente. Ao entrar como RH sem autorização
-              o acesso pode ser revogado.
-            </span>
-          </div>
-          <div className="field">
-            <label>Empresa do Grupo</label>
+            <label>Empresa (opcional)</label>
             <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} placeholder="Ex.: ETUS" />
           </div>
           <div className="field">
-            <label>Área / Time</label>
+            <label>Área / Time (opcional)</label>
             <input value={area} onChange={(e) => setArea(e.target.value)} placeholder="Ex.: Tecnologia" />
           </div>
+          <span className="hint" style={{ display: 'block', marginTop: -6 }}>
+            Toda nova conta entra como <strong>prestador</strong>. O RH faz o ajuste de perfil
+            (gestor, RH, colaborador ou estagiário) dentro do sistema depois.
+          </span>
 
           <button className="btn btn-primary" type="submit" disabled={loading}>
             {loading ? 'Criando conta…' : 'Criar conta'}

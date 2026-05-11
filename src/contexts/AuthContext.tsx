@@ -19,7 +19,6 @@ import {
 } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import type { Role, UserProfile } from '../types'
-import { isEmailAllowed } from '../utils/authAllowlist'
 
 export const BLOCKED_USERS_COLLECTION = 'blocked_users'
 
@@ -163,31 +162,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 return
               }
 
-              // 2) Fallback: domínio corporativo permitido → vira gestor.
-              if (isEmailAllowed(u.email)) {
-                const defaults = {
-                  email: u.email,
-                  name: u.displayName ?? u.email,
-                  role: 'gestor' as Role,
-                  empresa: '',
-                  area: '',
-                  createdAt: serverTimestamp(),
-                }
-                await setDoc(ref, defaults)
-                setProfile({
-                  uid: u.uid,
-                  email: defaults.email,
-                  name: defaults.name,
-                  role: defaults.role,
-                  empresa: defaults.empresa,
-                  area: defaults.area,
-                })
-              } else {
-                // 3) Email não está em nenhum cadastro nem é corporativo:
-                //    bloqueia. Desloga pra não ficar preso em loop de login.
-                await signOut(auth)
-                setProfile(null)
+              // 2) Fallback: toda nova conta (Google sem cadastro prévio)
+              //    entra como `prestador`. O RH faz o ajuste de perfil
+              //    (gestor / RH / colaborador / estagiário) dentro do sistema
+              //    depois, na tela Usuários. Antes, o domínio @etus virava
+              //    gestor automático — agora qualquer domínio cai aqui.
+              const defaults = {
+                email: u.email,
+                name: u.displayName ?? u.email,
+                role: 'prestador' as Role,
+                empresa: '',
+                area: '',
+                createdAt: serverTimestamp(),
               }
+              await setDoc(ref, defaults)
+              setProfile({
+                uid: u.uid,
+                email: defaults.email,
+                name: defaults.name,
+                role: defaults.role,
+                empresa: defaults.empresa,
+                area: defaults.area,
+              })
             } else {
               setProfile(null)
             }
