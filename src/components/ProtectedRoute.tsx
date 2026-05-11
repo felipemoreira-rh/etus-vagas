@@ -11,18 +11,17 @@ interface Props {
 export default function ProtectedRoute({ role, children }: Props) {
   const { user, profile, loading } = useAuth()
 
-  if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: 'var(--text-muted)' }}>
-        Carregando…
-      </div>
-    )
-  }
+  if (loading) return <div className="app-loader">Carregando…</div>
 
   if (!user) return <Navigate to="/login" replace />
   if (!profile) return <Navigate to="/login" replace />
   if (role && profile.role !== role) {
-    return <Navigate to={profile.role === 'rh' ? '/rh' : '/gestor'} replace />
+    return (
+      <Navigate
+        to={profile.role === 'rh' ? '/rh/indicadores' : '/gestor/minhas-vagas'}
+        replace
+      />
+    )
   }
 
   return <>{children}</>
