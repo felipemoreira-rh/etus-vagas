@@ -20,12 +20,27 @@ function daysSince(ts?: { toDate: () => Date } | null) {
   } catch { return 0 }
 }
 
+// "Dias em aberto" da vaga:
+// - Aberta/em andamento → conta até hoje (live).
+// - Finalizada/Cancelada → CONGELA. Prioriza `diasAberta` (gravado quando a
+//   vaga foi fechada). Fallback: `dataFechamento - createdAt`. Último fallback
+//   pra vagas antigas sem nenhum dos dois: `updatedAt - createdAt`.
+function diasEmAberto(v: Vaga): number {
+  const fechada = v.status === 'contratada' || v.status === 'cancelada'
+  if (!fechada) return daysSince(v.createdAt)
+  if (typeof v.diasAberta === 'number') return v.diasAberta
+  const ini = v.createdAt?.toDate?.()
+  const fim = v.dataFechamento?.toDate?.() ?? v.updatedAt?.toDate?.()
+  if (!ini || !fim) return 0
+  return Math.max(0, Math.floor((fim.getTime() - ini.getTime()) / 86400000))
+}
+
 function toCsv(rows: Vaga[]) {
   const header = ['ID','Cargo','Time','Empresas','Status','Gestor','Email do gestor','Regime','Nível','Jornada','Aberta em','Dias em aberto']
   const body = rows.map(v => [
     v.id, v.cargo, v.time, getVagaEmpresas(v).join(' / '), STATUS_LABELS[v.status],
     v.gestorNome, v.gestorEmail, v.regime, v.nivel, v.jornada,
-    formatDate(v.createdAt), String(daysSince(v.createdAt)),
+    formatDate(v.createdAt), String(diasEmAberto(v)),
   ].map(cell => '"' + String(cell ?? '').replace(/"/g, '""') + '"').join(','))
   return [header.join(','), ...body].join('\n')
 }
@@ -158,7 +173,7 @@ export default function TodasVagas() {
                       <td style={{ fontSize: 12, color: 'var(--mut)' }}>{v.gestorNome}</td>
                       <td><StatusBadge status={v.status} /></td>
                       <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(v.createdAt)}</td>
-                      <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700 }}>{daysSince(v.createdAt)}</td>
+                      <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700 }}>{diasEmAberto(v)}</td>
                       <td>
                         <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                           <Link to={`/rh/vagas/${v.id}`} className="tbtn" style={{ height: 26 }}>Abrir</Link>
