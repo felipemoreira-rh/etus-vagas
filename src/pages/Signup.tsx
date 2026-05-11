@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import type { Role } from '../types'
 
 export default function Signup() {
   const { signup } = useAuth()
@@ -9,7 +8,6 @@ export default function Signup() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<Role>('gestor')
   const [empresa, setEmpresa] = useState('')
   const [area, setArea] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -20,7 +18,9 @@ export default function Signup() {
     setError(null)
     setLoading(true)
     try {
-      await signup({ email, password, name, role, empresa, area })
+      // Toda nova conta começa como prestador. O RH faz o ajuste de perfil
+      // (gestor/RH/colaborador/estagiário) dentro do sistema depois.
+      await signup({ email, password, name, role: 'prestador', empresa, area })
       navigate('/')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Falha ao criar conta.'
@@ -33,14 +33,16 @@ export default function Signup() {
   return (
     <div className="auth-shell">
       <div className="auth-hero">
-        <div className="logo">ETUS</div>
+        <div className="logo">
+          <img src="/logo-etus-white.png" alt="ETUS" className="auth-logo-img" />
+        </div>
         <div>
           <h2>
-            Junte-se ao <span>time</span> de construção
+            Construindo <span>novos times</span> com clareza.
           </h2>
-          <p style={{ color: 'var(--neutral-300)', marginTop: 16, maxWidth: 480, fontSize: 15, lineHeight: 1.6 }}>
-            Crie sua conta para abrir vagas, acompanhar o processo seletivo e colaborar com o
-            Time de Gente em cada contratação.
+          <p>
+            Crie sua conta para abrir vagas, acompanhar candidatos e colaborar com o Time de Gente
+            em cada contratação.
           </p>
         </div>
         <div className="footnote">Time de Gente · Grupo ETUS</div>
@@ -73,48 +75,23 @@ export default function Signup() {
             />
           </div>
           <div className="field">
-            <label>Perfil de acesso</label>
-            <div className="radio-group">
-              {(
-                [
-                  { v: 'gestor', l: 'Gestor' },
-                  { v: 'rh', l: 'RH' },
-                ] as { v: Role; l: string }[]
-              ).map((opt) => (
-                <label
-                  key={opt.v}
-                  className={'radio-option' + (role === opt.v ? ' selected' : '')}
-                >
-                  <input
-                    type="radio"
-                    name="role"
-                    value={opt.v}
-                    checked={role === opt.v}
-                    onChange={() => setRole(opt.v)}
-                  />
-                  {opt.l}
-                </label>
-              ))}
-            </div>
-            <span className="hint">
-              O acesso de RH deve ser aprovado internamente. Ao entrar como RH sem autorização
-              o acesso pode ser revogado.
-            </span>
-          </div>
-          <div className="field">
-            <label>Empresa do Grupo</label>
+            <label>Empresa (opcional)</label>
             <input value={empresa} onChange={(e) => setEmpresa(e.target.value)} placeholder="Ex.: ETUS" />
           </div>
           <div className="field">
-            <label>Área / Time</label>
+            <label>Área / Time (opcional)</label>
             <input value={area} onChange={(e) => setArea(e.target.value)} placeholder="Ex.: Tecnologia" />
           </div>
+          <span className="hint" style={{ display: 'block', marginTop: -6 }}>
+            Toda nova conta entra como <strong>prestador</strong>. O RH faz o ajuste de perfil
+            (gestor, RH, colaborador ou estagiário) dentro do sistema depois.
+          </span>
 
           <button className="btn btn-primary" type="submit" disabled={loading}>
             {loading ? 'Criando conta…' : 'Criar conta'}
           </button>
-          <p style={{ fontSize: 13 }}>
-            Já tem conta? <Link to="/login">Entrar</Link>
+          <p style={{ fontSize: 12 }}>
+            Já tem conta? <Link to="/login" style={{ color: 'var(--g600)', fontWeight: 600 }}>Entrar</Link>
           </p>
         </form>
       </div>

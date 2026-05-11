@@ -1,9 +1,13 @@
 rules_version = '2';
 
 // Regras de segurança do Firestore para o sistema ETUS Vagas.
-// Modelo:
-//   - users/{uid}: perfil do usuário (role: "rh" | "gestor").
-//   - vagas/{id}:  vagas abertas pelos gestores.
+// Modelo (2 módulos integrados):
+//   - users/{uid}:              perfil do usuário (role: "rh" | "gestor").
+//   - vagas/{id}:               vagas abertas pelos gestores (módulo RH).
+//   - candidatos/{id}:          candidatos em processo seletivo (módulo RH).
+//   - onboarding/{id}:          checklist de integração de novos contratados (módulo RH).
+//   - estagiarios/{id}:         estagiários ativos/finalizados (módulo DP).
+//   - colaboradores/{id}:       colaboradores e período de experiência (módulo DP).
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -24,45 +28,234 @@ service cloud.firestore {
       return isSignedIn() && myRole() == 'gestor';
     }
 
+    function isPessoa() {
+      return isSignedIn() && (
+        myRole() == 'estagiario' ||
+        myRole() == 'colaborador' ||
+        myRole() == 'prestador'
+      );
+    }
+
+    // pessoaId guardado no user doc → vincula ao registro em
+    // estagiarios/colaboradores. Usado pelas regras pra checar "é o próprio".
+    function myPessoaId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.pessoaId;
+    }
+
+    // Email do usuário autenticado, lowercased pra comparação tolerante a caixa.
+    function myEmailLow() {
+      return request.auth.token.email is string
+        ? request.auth.token.email.lower()
+        : '';
+    }
+
+    // Cadastro (estagiario/colaborador) pertence ao usuário se algum dos
+    // campos de email do doc bater (case-insensitive) com o email do token.
+    // Usado pelo auto-link de primeiro login (AuthContext.tryAutoLinkPessoa)
+    // ANTES de existir o doc em users/{uid} — daí não pode depender de
+    // myRole(). Aceita doc sem o campo, retornando '' como default.
+    function pessoaEmailMatchesMe() {
+      return isSignedIn() &&
+        myEmailLow() != '' &&
+        (resource.data.get('email', '').lower() == myEmailLow() ||
+         resource.data.get('emailCorporativo', '').lower() == myEmailLow());
+    }
+
+    function isBlocked(uid) {
+      return exists(/databases/$(database)/documents/blocked_users/$(uid));
+    }
+
     match /users/{uid} {
-      // Qualquer usuário autenticado pode ler a lista de usuários (necessário p/
-      // dashboards e gestão de acesso pelo RH).
       allow read: if isSignedIn();
-
-      // Cadastro: o próprio usuário cria seu documento ao se registrar.
-      allow create: if isSignedIn() && request.auth.uid == uid;
-
-      // Atualização: o próprio usuário pode editar campos básicos;
-      // apenas o RH pode alterar `role`.
+      // Cria o próprio doc só se NÃO estiver na lista de bloqueados. Isso
+      // fecha o bypass onde um usuário cujo acesso foi revogado (doc users
+      // deletado) podia abrir o devtools e dar `setDoc('users/{meu_uid}',
+      // { role: 'rh', ... })` pra reconquistar acesso — a checagem
+      // `blocked_users` no AuthContext é só UX; o enforce real é aqui.
+      allow create: if isSignedIn() && request.auth.uid == uid &&
+                       !isBlocked(uid);
       allow update: if isSignedIn() && (
         (request.auth.uid == uid &&
           request.resource.data.role == resource.data.role) ||
         isRh()
       );
-
       allow delete: if isRh();
     }
 
+    // Usuários cujo acesso foi revogado pelo RH (fluxo "Remover acesso" na
+    // tela Usuários). A presença de `blocked_users/{uid}` impede que o
+    // AuthContext re-crie o doc `users/{uid}` no próximo login via Google.
+    // - Leitura: o próprio usuário (pra o AuthContext checar seu bloqueio)
+    //   e RH (pra auditar/gerenciar).
+    // - Escrita: apenas RH.
+    match /blocked_users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isRh());
+      allow write: if isRh();
+    }
+
     match /vagas/{vagaId} {
-      // Leitura: RH vê tudo; gestor vê apenas as próprias.
       allow read: if isRh() ||
                      (isGestor() && resource.data.gestorUid == request.auth.uid);
-
-      // Criação: apenas gestor autenticado, e o documento precisa registrá-lo
-      // como gestor responsável.
-      allow create: if isGestor() &&
-                       request.resource.data.gestorUid == request.auth.uid &&
+      allow create: if (isRh() ||
+                        (isGestor() && request.resource.data.gestorUid == request.auth.uid)) &&
                        request.resource.data.status == 'aberta';
-
-      // Atualização: RH pode movimentar qualquer vaga;
-      // o gestor pode atualizar apenas as próprias vagas sem alterar o histórico
-      // principal (status continua sob responsabilidade do RH).
+      // Gestor pode atualizar a própria vaga (incluindo mudar status) desde
+      // que mantenha gestorUid intacto. RH pode tudo.
       allow update: if isRh() ||
                        (isGestor() &&
                         resource.data.gestorUid == request.auth.uid &&
                         request.resource.data.gestorUid == resource.data.gestorUid);
-
       allow delete: if isRh();
     }
+
+    // === Módulo RH ===
+    // Candidatos: RH lê/escreve tudo. Gestor pode ler os candidatos vinculados
+    // a uma vaga de sua responsabilidade (via vagaGestorUid).
+    match /candidatos/{id} {
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.vagaGestorUid == request.auth.uid);
+      allow create, delete: if isRh();
+      // Gestor pode atualizar candidatos das próprias vagas (mover fase, anotar).
+      // RH pode tudo. Em ambos os casos, vagaGestorUid não pode ser alterado.
+      allow update: if isRh() ||
+                       (isGestor() &&
+                        resource.data.vagaGestorUid == request.auth.uid &&
+                        request.resource.data.vagaGestorUid == resource.data.vagaGestorUid);
+    }
+
+    // Onboarding: RH cria/edita. Gestor pode ler os onboardings das vagas
+    // sob sua responsabilidade (vinculados via candidatoId/vagaId).
+    match /onboarding/{id} {
+      allow read: if isRh() ||
+                     (isGestor() &&
+                      exists(/databases/$(database)/documents/vagas/$(resource.data.vagaId)) &&
+                      get(/databases/$(database)/documents/vagas/$(resource.data.vagaId)).data.gestorUid == request.auth.uid);
+      allow create, update, delete: if isRh();
+    }
+
+    // === Módulo DP — Departamento Pessoal ===
+    // Estagiários e colaboradores: RH cria/edita. Gestor lê seus próprios
+    // (gestorUid == auth.uid) pra acompanhar seu time.
+    match /estagiarios/{id} {
+      // RH lê tudo. Gestor lê os do seu time. O próprio estagiário lê o
+      // próprio doc (via pessoaId no user). Também permitimos leitura pelo
+      // email do token — necessário pro auto-link no 1º login Google, ANTES
+      // de o user doc existir, e pra tolerar caixa diferente no cadastro.
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.gestorUid == request.auth.uid) ||
+                     (isPessoa() && myPessoaId() == id) ||
+                     pessoaEmailMatchesMe();
+      allow create, delete: if isRh();
+      // RH atualiza tudo. O próprio estagiário pode atualizar somente
+      // campos não-sensíveis (telefone/email/observações/documentos/uid)
+      // — bolsa, datas, gestor, status, etc. ficam fora.
+      allow update: if isRh() ||
+                       (isPessoa() && myPessoaId() == id &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly(['telefone', 'email', 'observacoes',
+                                    'documentos', 'fotoUrl', 'fotoPath',
+                                    'uid', 'updatedAt']));
+    }
+
+    match /colaboradores/{id} {
+      // RH lê tudo. Gestor lê os do seu time. O próprio colaborador/
+      // prestador lê o próprio doc (via pessoaId). Email do token também
+      // libera, pra rodar o auto-link no 1º login Google.
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.gestorUid == request.auth.uid) ||
+                     (isPessoa() && myPessoaId() == id) ||
+                     pessoaEmailMatchesMe();
+      allow create, delete: if isRh();
+      // RH pode tudo. Gestor pode atualizar APENAS o próprio time, e
+      // somente para registrar/encerrar suspensões temporárias de
+      // contrato ou marcar pedido de desligamento. O próprio prestador/
+      // colaborador pode adicionar suspensão de contrato (PJ) ou solicitar
+      // desligamento — mesmo conjunto de affectedKeys.
+      allow update: if isRh() ||
+                       (isGestor() &&
+                        resource.data.gestorUid == request.auth.uid &&
+                        request.resource.data.gestorUid == resource.data.gestorUid &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly(['suspensoes', 'status', 'updatedAt', 'desligamentoSolicitadoId'])) ||
+                       (isPessoa() && myPessoaId() == id &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly(['suspensoes', 'status', 'updatedAt', 'desligamentoSolicitadoId',
+                                    'telefone', 'email', 'uid']));
+    }
+
+    // Desligamentos: gestor cria pedido para alguém do seu time;
+    // RH lê tudo, aprova, conclui ou cancela. Gestor lê só os próprios
+    // pedidos (solicitanteUid). O próprio colaborador/prestador também
+    // pode abrir pedido voluntário pelo /me (solicitanteUid == auth.uid).
+    match /desligamentos/{id} {
+      allow read: if isRh() ||
+                     (isGestor() && resource.data.solicitanteUid == request.auth.uid) ||
+                     (isPessoa() && resource.data.solicitanteUid == request.auth.uid);
+      allow create: if isRh() ||
+                       (isGestor() &&
+                        request.resource.data.solicitanteUid == request.auth.uid &&
+                        request.resource.data.status == 'pendente' &&
+                        get(/databases/$(database)/documents/colaboradores/$(request.resource.data.colaboradorId)).data.gestorUid == request.auth.uid) ||
+                       (isPessoa() &&
+                        request.resource.data.solicitanteUid == request.auth.uid &&
+                        request.resource.data.status == 'pendente' &&
+                        request.resource.data.colaboradorId == myPessoaId());
+      // Só RH atualiza/exclui (aprova, conclui, cancela).
+      allow update, delete: if isRh();
+    }
+
+    // === Portal — solicitações ao RH (estagiário/colaborador/prestador) ===
+    // Cada pessoa abre tickets pra RH na rota /me. RH lê tudo e responde.
+    // O próprio solicitante lê e cancela os próprios.
+    match /solicitacoes_rh/{id} {
+      allow read: if isRh() ||
+                     (isSignedIn() && resource.data.solicitanteUid == request.auth.uid);
+      allow create: if isPessoa() &&
+                       request.resource.data.solicitanteUid == request.auth.uid &&
+                       request.resource.data.status == 'aberta' &&
+                       request.resource.data.pessoaId == myPessoaId();
+      // Solicitante pode cancelar o próprio. RH faz qualquer update.
+      allow update: if isRh() ||
+                       (isSignedIn() &&
+                        resource.data.solicitanteUid == request.auth.uid &&
+                        request.resource.data.status == 'cancelada');
+      allow delete: if isRh();
+    }
+
+    // === Portal — pedidos de férias (colaborador CLT) ===
+    match /ferias/{id} {
+      allow read: if isRh() ||
+                     (isSignedIn() && resource.data.solicitanteUid == request.auth.uid);
+      allow create: if isPessoa() &&
+                       request.resource.data.solicitanteUid == request.auth.uid &&
+                       request.resource.data.status == 'pendente' &&
+                       request.resource.data.colaboradorId == myPessoaId();
+      // Solicitante pode cancelar o próprio. RH aprova/recusa.
+      allow update: if isRh() ||
+                       (isSignedIn() &&
+                        resource.data.solicitanteUid == request.auth.uid &&
+                        request.resource.data.status == 'cancelada');
+      allow delete: if isRh();
+    }
+
+    // Notificações: cada usuário só vê e marca como lida as próprias.
+    // RH cria notificações (em batch via app); gestor pode marcar a
+    // própria como lida mas não pode criar/apagar.
+    match /notificacoes/{id} {
+      allow read: if isSignedIn() &&
+                     resource.data.destinatarioUid == request.auth.uid;
+      allow create: if isRh();
+      // Update permitido só se for marcar `lida = true` ou se for RH.
+      // (Mantemos simples: qualquer destinatário pode atualizar a própria,
+      //  já que campos de auditoria não são sensíveis.)
+      allow update: if isRh() ||
+                       (isSignedIn() &&
+                        resource.data.destinatarioUid == request.auth.uid);
+      allow delete: if isRh();
+    }
+
   }
 }
