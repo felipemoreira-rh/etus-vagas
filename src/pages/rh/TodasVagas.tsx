@@ -5,7 +5,7 @@ import { db } from '../../firebase'
 import Topbar from '../../components/Topbar'
 import StatusBadge from '../../components/StatusBadge'
 import type { Vaga, VagaStatus } from '../../types'
-import { getVagaEmpresas, STATUS_LABELS, STATUS_ORDER } from '../../types'
+import { getVagaEmpresas, STATUS_FINALIZADOS, STATUS_LABELS, STATUS_ORDER } from '../../types'
 
 function formatDate(ts?: { toDate: () => Date } | null) {
   if (!ts) return '—'
@@ -20,13 +20,39 @@ function daysSince(ts?: { toDate: () => Date } | null) {
   } catch { return 0 }
 }
 
+// Quantos dias a vaga ficou em aberto. Se já está finalizada/cancelada,
+// usa o valor congelado em `diasAberta` (gravado quando a vaga foi fechada).
+// Se for legado (finalizada mas sem `diasAberta`), tenta inferir da data
+// de fechamento; só cai no createdAt → hoje pra vagas ativas.
+function diasEmAberto(v: Vaga) {
+  const isFinal = STATUS_FINALIZADOS.includes(v.status)
+  if (isFinal) {
+    if (typeof v.diasAberta === 'number') return v.diasAberta
+    if (v.dataFechamento && v.createdAt) {
+      try {
+        const ini = v.createdAt.toDate().getTime()
+        const fim = v.dataFechamento.toDate().getTime()
+        return Math.max(0, Math.floor((fim - ini) / 86400000))
+      } catch { /* fallthrough */ }
+    }
+    // Vaga finalizada legado sem nenhum dos dois → não conseguimos saber
+    // o SLA real; mostra travessão pra não enganar com contagem viva.
+    return null
+  }
+  return daysSince(v.createdAt)
+}
+
 function toCsv(rows: Vaga[]) {
-  const header = ['ID','Cargo','Time','Empresas','Status','Gestor','Email do gestor','Regime','Nível','Jornada','Aberta em','Dias em aberto']
-  const body = rows.map(v => [
-    v.id, v.cargo, v.time, getVagaEmpresas(v).join(' / '), STATUS_LABELS[v.status],
-    v.gestorNome, v.gestorEmail, v.regime, v.nivel, v.jornada,
-    formatDate(v.createdAt), String(daysSince(v.createdAt)),
-  ].map(cell => '"' + String(cell ?? '').replace(/"/g, '""') + '"').join(','))
+  const header = ['ID','Cargo','Time','Empresas','Status','Gestor','Email do gestor','Regime','Nível','Jornada','Aberta em','Fechada em','Dias em aberto']
+  const body = rows.map(v => {
+    const dias = diasEmAberto(v)
+    return [
+      v.id, v.cargo, v.time, getVagaEmpresas(v).join(' / '), STATUS_LABELS[v.status],
+      v.gestorNome, v.gestorEmail, v.regime, v.nivel, v.jornada,
+      formatDate(v.createdAt), formatDate(v.dataFechamento),
+      dias == null ? '' : String(dias),
+    ].map(cell => '"' + String(cell ?? '').replace(/"/g, '""') + '"').join(',')
+  })
   return [header.join(','), ...body].join('\n')
 }
 
@@ -145,6 +171,7 @@ export default function TodasVagas() {
                     <th>Gestor</th>
                     <th>Status</th>
                     <th>Aberta em</th>
+                    <th>Fechada em</th>
                     <th style={{ textAlign: 'right' }}>Dias</th>
                     <th style={{ width: 140 }}></th>
                   </tr>
@@ -158,7 +185,15 @@ export default function TodasVagas() {
                       <td style={{ fontSize: 12, color: 'var(--mut)' }}>{v.gestorNome}</td>
                       <td><StatusBadge status={v.status} /></td>
                       <td style={{ fontSize: 11, color: 'var(--mut)' }}>{formatDate(v.createdAt)}</td>
-                      <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700 }}>{daysSince(v.createdAt)}</td>
+                      <td style={{ fontSize: 11, color: 'var(--mut)' }}>
+                        {STATUS_FINALIZADOS.includes(v.status) ? formatDate(v.dataFechamento) : '—'}
+                      </td>
+                      <td style={{ textAlign: 'right', fontSize: 12, fontWeight: 700 }}>
+                        {(() => {
+                          const d = diasEmAberto(v)
+                          return d == null ? '—' : d
+                        })()}
+                      </td>
                       <td>
                         <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                           <Link to={`/rh/vagas/${v.id}`} className="tbtn" style={{ height: 26 }}>Abrir</Link>
