@@ -6,6 +6,30 @@ import { BLOCKED_USERS_COLLECTION, useAuth } from '../../contexts/AuthContext'
 import Topbar from '../../components/Topbar'
 import type { Role, UserProfile } from '../../types'
 
+const ROLE_OPTIONS: { value: Role; label: string }[] = [
+  { value: 'rh', label: 'RH' },
+  { value: 'gestor', label: 'Gestor' },
+  { value: 'colaborador', label: 'Colaborador' },
+  { value: 'prestador', label: 'Prestador' },
+  { value: 'estagiario', label: 'Estagiário' },
+]
+
+const ROLE_LABEL: Record<Role, string> = {
+  rh: 'RH',
+  gestor: 'Gestor',
+  colaborador: 'Colaborador',
+  prestador: 'Prestador',
+  estagiario: 'Estagiário',
+}
+
+const ROLE_BDG: Record<Role, string> = {
+  rh: 'ok',
+  gestor: 'info',
+  colaborador: 'warn',
+  prestador: 'warn',
+  estagiario: 'gray',
+}
+
 export default function Usuarios() {
   const { profile } = useAuth()
   const [users, setUsers] = useState<UserProfile[]>([])
@@ -64,7 +88,9 @@ export default function Usuarios() {
         <div className="panel">
           <h3>Acesso e perfis</h3>
           <p className="muted" style={{ fontSize: 12, marginBottom: 10 }}>
-            Crie contas novas no botão acima ou promova/rebaixe contas existentes entre <b>RH</b> e <b>Gestor</b>. Apenas contas RH acessam todos os módulos.
+            Crie contas novas no botão acima ou ajuste o perfil de contas existentes entre
+            <b> RH</b>, <b>Gestor</b>, <b>Colaborador</b>, <b>Prestador</b> e <b>Estagiário</b>.
+            Apenas contas RH acessam todos os módulos.
           </p>
           {loading ? (
             <div className="empty-state">Carregando…</div>
@@ -90,8 +116,8 @@ export default function Usuarios() {
                     <td style={{ fontSize: 12, color: 'var(--mut)' }}>{u.empresa || '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--mut)' }}>{u.area || '—'}</td>
                     <td>
-                      <span className={`bdg ${u.role === 'rh' ? 'ok' : 'info'}`}>
-                        {u.role === 'rh' ? 'RH' : 'Gestor'}
+                      <span className={`bdg ${ROLE_BDG[u.role]}`}>
+                        {ROLE_LABEL[u.role] ?? u.role}
                       </span>
                     </td>
                     <td>
@@ -102,8 +128,9 @@ export default function Usuarios() {
                           onChange={(e) => changeRole(u, e.target.value as Role)}
                           style={{ fontSize: 11, padding: '4px 6px' }}
                         >
-                          <option value="gestor">Gestor</option>
-                          <option value="rh">RH</option>
+                          {ROLE_OPTIONS.map(o => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
                         </select>
                         <button
                           type="button"
@@ -260,8 +287,9 @@ function NovoUsuarioModal({ onClose }: { onClose: () => void }) {
               <div className="field">
                 <label>Perfil *</label>
                 <select value={role} onChange={(e) => setRole(e.target.value as Role)}>
-                  <option value="gestor">Gestor</option>
-                  <option value="rh">RH</option>
+                  {ROLE_OPTIONS.map(o => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
                 </select>
               </div>
               <div className="field">
