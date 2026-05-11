@@ -50,13 +50,17 @@ async function tryAutoLinkPessoa(
   displayName: string | null,
 ): Promise<UserProfile | null> {
   const emailLow = email.toLowerCase()
+  // RH muitas vezes salva o email com maiúsculas. A query `where == emailLow`
+  // não casa nesse caso. Pra dar conta, tentamos a versão lowercased e a
+  // original. Ambas passam pela rule `pessoaEmailMatchesMe()` (case-insensitive).
+  const emailVariants = email === emailLow ? [emailLow] : [emailLow, email]
 
   // Estagiário primeiro (cadastros mais novos). Tentamos pelo `email` e
   // pelo `emailCorporativo` separadamente já que o Firestore não suporta OR
   // entre campos diferentes na mesma query simples.
   const esCol = collection(db, 'estagiarios')
-  for (const field of ['email', 'emailCorporativo']) {
-    const q = query(esCol, where(field, '==', emailLow), limit(1))
+  for (const field of ['email', 'emailCorporativo']) for (const variant of emailVariants) {
+    const q = query(esCol, where(field, '==', variant), limit(1))
     const snap = await getDocs(q)
     if (!snap.empty) {
       const d = snap.docs[0]
