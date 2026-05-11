@@ -13,7 +13,10 @@ import {
   updateProfile,
   type User,
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import {
+  collection, doc, getDoc, getDocs, limit, query, serverTimestamp, setDoc,
+  updateDoc, where,
+} from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import type { Role, UserProfile } from '../types'
 import { isEmailAllowed } from '../utils/authAllowlist'
@@ -38,6 +41,81 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
+// Tenta encontrar a pessoa em `estagiarios` ou `colaboradores` por email
+// e cria o user doc + grava uid de volta no cadastro. Retorna o profile
+// criado, ou null se não achou ninguém.
+async function tryAutoLinkPessoa(
+  uid: string,
+  email: string,
+  displayName: string | null,
+): Promise<UserProfile | null> {
+  const emailLow = email.toLowerCase()
+
+  // Estagiário primeiro (cadastros mais novos). Tentamos pelo `email` e
+  // pelo `emailCorporativo` separadamente já que o Firestore não suporta OR
+  // entre campos diferentes na mesma query simples.
+  const esCol = collection(db, 'estagiarios')
+  for (const field of ['email', 'emailCorporativo']) {
+    const q = query(esCol, where(field, '==', emailLow), limit(1))
+    const snap = await getDocs(q)
+    if (!snap.empty) {
+      const d = snap.docs[0]
+      const data = d.data() as { nome?: string; empresa?: string; area?: string }
+      const userDoc = {
+        email: emailLow,
+        name: displayName ?? data.nome ?? emailLow,
+        role: 'estagiario' as Role,
+        empresa: data.empresa ?? '',
+        area: data.area ?? '',
+        pessoaId: d.id,
+        pessoaTipo: 'estagiario' as const,
+        createdAt: serverTimestamp(),
+      }
+      await setDoc(doc(db, 'users', uid), userDoc)
+      // Grava uid no cadastro pra que o RH consiga ver o vínculo.
+      // Se a rule recusar, ainda assim o login segue OK — só o vínculo
+      // visível pelo RH fica pendente até alguém atualizar manualmente.
+      try {
+        await updateDoc(doc(db, 'estagiarios', d.id), { uid })
+      } catch { /* rule pode não permitir; segue o jogo */ }
+      return { uid, ...userDoc, createdAt: undefined }
+    }
+  }
+
+  // Colaboradores: a coleção é única, mas o role do user depende do
+  // regime (clt → colaborador, pj/freelancer → prestador).
+  const colCol = collection(db, 'colaboradores')
+  for (const field of ['email', 'emailCorporativo']) {
+    const q = query(colCol, where(field, '==', emailLow), limit(1))
+    const snap = await getDocs(q)
+    if (!snap.empty) {
+      const d = snap.docs[0]
+      const data = d.data() as {
+        nome?: string; empresa?: string; area?: string; regime?: string
+      }
+      const isPJ = data.regime === 'pj' || data.regime === 'freelancer'
+      const role: Role = isPJ ? 'prestador' : 'colaborador'
+      const userDoc = {
+        email: emailLow,
+        name: displayName ?? data.nome ?? emailLow,
+        role,
+        empresa: data.empresa ?? '',
+        area: data.area ?? '',
+        pessoaId: d.id,
+        pessoaTipo: (isPJ ? 'prestador' : 'colaborador') as 'colaborador' | 'prestador',
+        createdAt: serverTimestamp(),
+      }
+      await setDoc(doc(db, 'users', uid), userDoc)
+      try {
+        await updateDoc(doc(db, 'colaboradores', d.id), { uid })
+      } catch { /* rule pode recusar; segue */ }
+      return { uid, ...userDoc, createdAt: undefined }
+    }
+  }
+
+  return null
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -59,18 +137,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Se o doc fosse criado depois, o listener já teria lido null e
             // o RoleRedirect mandaria o usuário de volta pro /login.
             const isGoogle = u.providerData.some((p) => p.providerId === 'google.com')
-            if (isGoogle && u.email && isEmailAllowed(u.email)) {
-              // Antes de re-criar o doc, verifica se esse uid foi bloqueado
-              // pelo RH (fluxo "Remover acesso" na tela Usuários). Se
-              // estiver bloqueado, fazemos signOut e deixamos profile=null
-              // pra evitar que um usuário cujo acesso foi revogado
-              // reconquiste acesso só clicando em "Entrar com Google".
+            if (isGoogle && u.email) {
+              // Antes de criar o doc, verifica se esse uid foi bloqueado
+              // pelo RH (fluxo "Remover acesso" na tela Usuários).
               const blockedRef = doc(db, BLOCKED_USERS_COLLECTION, u.uid)
               const blockedSnap = await getDoc(blockedRef)
               if (blockedSnap.exists()) {
                 await signOut(auth)
                 setProfile(null)
-              } else {
+                setLoading(false)
+                return
+              }
+
+              // 1) Tenta vincular a um cadastro em estagiarios/colaboradores
+              //    pelo email — assim a pessoa entra direto no portal /me
+              //    sem precisar do RH pré-criar usuário com email+senha.
+              const linked = await tryAutoLinkPessoa(u.uid, u.email, u.displayName)
+              if (linked) {
+                setProfile(linked)
+                setLoading(false)
+                return
+              }
+
+              // 2) Fallback: domínio corporativo permitido → vira gestor.
+              if (isEmailAllowed(u.email)) {
                 const defaults = {
                   email: u.email,
                   name: u.displayName ?? u.email,
@@ -88,6 +178,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                   empresa: defaults.empresa,
                   area: defaults.area,
                 })
+              } else {
+                // 3) Email não está em nenhum cadastro nem é corporativo:
+                //    bloqueia. Desloga pra não ficar preso em loop de login.
+                await signOut(auth)
+                setProfile(null)
               }
             } else {
               setProfile(null)

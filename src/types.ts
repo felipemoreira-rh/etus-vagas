@@ -1,7 +1,21 @@
 import type { Timestamp } from 'firebase/firestore'
 
 // ═════════════════════════ USUÁRIOS ═════════════════════════
-export type Role = 'rh' | 'gestor'
+// Roles:
+// - rh / gestor: usuários administrativos (telas RH, DP, gestor).
+// - estagiario / colaborador / prestador: pessoas que aparecem nas coleções
+//   correspondentes (estagiarios / colaboradores). Têm acesso só ao "Meu
+//   perfil" (rota /me). Diferenciamos colaborador (CLT) e prestador (PJ)
+//   apenas pelo role do user — internamente os dois caem em `colaboradores`.
+export type Role = 'rh' | 'gestor' | 'estagiario' | 'colaborador' | 'prestador'
+
+export const ROLE_LABEL: Record<Role, string> = {
+  rh: 'RH',
+  gestor: 'Gestor',
+  estagiario: 'Estagiário',
+  colaborador: 'Colaborador (CLT)',
+  prestador: 'Prestador (PJ)',
+}
 
 export interface UserProfile {
   uid: string
@@ -10,6 +24,13 @@ export interface UserProfile {
   role: Role
   empresa?: string
   area?: string
+  /**
+   * Para roles "pessoa" (estagiario/colaborador/prestador), id do documento
+   * em `estagiarios` ou `colaboradores` que esse usuário representa. Usado
+   * pra carregar o próprio perfil em /me sem precisar de query por email.
+   */
+  pessoaId?: string
+  pessoaTipo?: 'estagiario' | 'colaborador' | 'prestador'
   createdAt?: Timestamp
 }
 
@@ -967,6 +988,66 @@ export const SUSPENSAO_TIPO_OPTIONS: { value: Suspensao['tipo']; label: string }
   { value: 'licenca', label: 'Suspensão temporária de contrato' },
   { value: 'outro', label: 'Outro' },
 ]
+
+// ═════════════════════════ PORTAL — SOLICITAÇÕES AO RH ═════════════════════════
+// Abertas por estagiário / colaborador / prestador na rota `/me`. RH responde
+// na tela "Solicitações" (DP) — só registra/responde, sem fluxo de aprovação
+// formal pra todo tipo.
+export type SolicitacaoTipo =
+  | 'duvida'
+  | 'documento'
+  | 'beneficio'
+  | 'reembolso'
+  | 'outro'
+
+export const SOLICITACAO_TIPO_LABEL: Record<SolicitacaoTipo, string> = {
+  duvida: 'Dúvida geral',
+  documento: 'Solicitar documento',
+  beneficio: 'Benefícios',
+  reembolso: 'Reembolso',
+  outro: 'Outro',
+}
+
+export interface SolicitacaoRh {
+  id: string
+  tipo: SolicitacaoTipo
+  titulo: string
+  mensagem: string
+  // Quem solicitou (uid + perfil do tipo "pessoa").
+  solicitanteUid: string
+  solicitanteNome: string
+  solicitanteEmail: string
+  solicitanteTipo: 'estagiario' | 'colaborador' | 'prestador'
+  /** Documento da pessoa em estagiarios/colaboradores (para auditoria). */
+  pessoaId: string
+  status: 'aberta' | 'em_andamento' | 'resolvida' | 'cancelada'
+  respostaRh?: string
+  respondidoPorUid?: string
+  respondidoPorNome?: string
+  respondidoEm?: Timestamp
+  criadoEm: Timestamp
+  atualizadoEm: Timestamp
+}
+
+// ═════════════════════════ PORTAL — FÉRIAS (Colaborador CLT) ═════════════════════════
+export interface FeriasRequest {
+  id: string
+  colaboradorId: string
+  colaboradorNome: string
+  colaboradorEmail: string
+  solicitanteUid: string
+  inicio: Timestamp
+  fim: Timestamp
+  /** Quantidade de dias (informativa, calculada no app). */
+  dias: number
+  observacoes?: string
+  status: 'pendente' | 'aprovada' | 'recusada' | 'cancelada'
+  respostaRh?: string
+  resolvidoPorUid?: string
+  resolvidoPorNome?: string
+  resolvidoEm?: Timestamp
+  criadoEm: Timestamp
+}
 
 // ═════════════════════════ FIN — NOTAS IFOOD ═════════════════════════
 export interface NotaIfood {

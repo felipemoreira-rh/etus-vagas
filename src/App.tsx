@@ -3,7 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
 import { ModuleProvider } from './contexts/ModuleContext'
 import Layout from './components/Layout'
-import ProtectedRoute from './components/ProtectedRoute'
+import ProtectedRoute, { homeForRole } from './components/ProtectedRoute'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 
@@ -27,6 +27,8 @@ import DpPeriodoExperiencia from './pages/dp/PeriodoExperiencia'
 import DpIndicacoes from './pages/dp/Indicacoes'
 import DpSuspensoes from './pages/dp/Suspensoes'
 import DpDesligamentos from './pages/dp/Desligamentos'
+import DpSolicitacoes from './pages/dp/Solicitacoes'
+import DpFerias from './pages/dp/Ferias'
 
 // Gestor
 import GestorMinhasVagas from './pages/gestor/MinhasVagas'
@@ -36,11 +38,14 @@ import GestorCandidatos from './pages/gestor/Candidatos'
 import GestorCandidatoDetalhe from './pages/gestor/CandidatoDetalhe'
 import GestorEquipe from './pages/gestor/Equipe'
 
+// Portal (estagiário / colaborador / prestador)
+import MeuPerfil from './pages/portal/MeuPerfil'
+
 function RoleRedirect() {
   const { profile, loading } = useAuth()
   if (loading) return <div className="app-loader">Carregando…</div>
   if (!profile) return <Navigate to="/login" replace />
-  return <Navigate to={profile.role === 'rh' ? '/rh/indicadores' : '/gestor/minhas-vagas'} replace />
+  return <Navigate to={homeForRole(profile.role)} replace />
 }
 
 function RhRoute({ children }: { children: ReactNode }) {
@@ -54,6 +59,14 @@ function RhRoute({ children }: { children: ReactNode }) {
 function GestorRoute({ children }: { children: ReactNode }) {
   return (
     <ProtectedRoute role="gestor">
+      <Layout>{children}</Layout>
+    </ProtectedRoute>
+  )
+}
+
+function PortalRoute({ children }: { children: ReactNode }) {
+  return (
+    <ProtectedRoute role={['estagiario', 'colaborador', 'prestador']}>
       <Layout>{children}</Layout>
     </ProtectedRoute>
   )
@@ -88,6 +101,8 @@ export default function App() {
         <Route path="/dp/indicacoes" element={<RhRoute><DpIndicacoes /></RhRoute>} />
         <Route path="/dp/suspensoes" element={<RhRoute><DpSuspensoes /></RhRoute>} />
         <Route path="/dp/desligamentos" element={<RhRoute><DpDesligamentos /></RhRoute>} />
+        <Route path="/dp/solicitacoes" element={<RhRoute><DpSolicitacoes /></RhRoute>} />
+        <Route path="/dp/ferias" element={<RhRoute><DpFerias /></RhRoute>} />
 
         {/* Gestor */}
         <Route path="/gestor" element={<Navigate to="/gestor/minhas-vagas" replace />} />
@@ -97,6 +112,9 @@ export default function App() {
         <Route path="/gestor/candidatos" element={<GestorRoute><GestorCandidatos /></GestorRoute>} />
         <Route path="/gestor/candidatos/:id" element={<GestorRoute><GestorCandidatoDetalhe /></GestorRoute>} />
         <Route path="/gestor/equipe" element={<GestorRoute><GestorEquipe /></GestorRoute>} />
+
+        {/* Portal — estagiário / colaborador / prestador */}
+        <Route path="/me" element={<PortalRoute><MeuPerfil /></PortalRoute>} />
 
         <Route path="/" element={<RoleRedirect />} />
         <Route path="*" element={<Navigate to="/" replace />} />

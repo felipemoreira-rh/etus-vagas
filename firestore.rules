@@ -28,6 +28,20 @@ service cloud.firestore {
       return isSignedIn() && myRole() == 'gestor';
     }
 
+    function isPessoa() {
+      return isSignedIn() && (
+        myRole() == 'estagiario' ||
+        myRole() == 'colaborador' ||
+        myRole() == 'prestador'
+      );
+    }
+
+    // pessoaId guardado no user doc → vincula ao registro em
+    // estagiarios/colaboradores. Usado pelas regras pra checar "é o próprio".
+    function myPessoaId() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.pessoaId;
+    }
+
     function isBlocked(uid) {
       return exists(/databases/$(database)/documents/blocked_users/$(uid));
     }
@@ -104,44 +118,101 @@ service cloud.firestore {
     // Estagiários e colaboradores: RH cria/edita. Gestor lê seus próprios
     // (gestorUid == auth.uid) pra acompanhar seu time.
     match /estagiarios/{id} {
+      // RH lê tudo. Gestor lê os do seu time. O próprio estagiário lê o
+      // próprio doc (via pessoaId no user).
       allow read: if isRh() ||
-                     (isGestor() && resource.data.gestorUid == request.auth.uid);
-      allow create, update, delete: if isRh();
+                     (isGestor() && resource.data.gestorUid == request.auth.uid) ||
+                     (isPessoa() && myPessoaId() == id);
+      allow create, delete: if isRh();
+      // RH atualiza tudo. O próprio estagiário pode atualizar somente
+      // campos não-sensíveis (telefone/email/observações/documentos/uid)
+      // — bolsa, datas, gestor, status, etc. ficam fora.
+      allow update: if isRh() ||
+                       (isPessoa() && myPessoaId() == id &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly(['telefone', 'email', 'observacoes',
+                                    'documentos', 'fotoUrl', 'fotoPath',
+                                    'uid', 'updatedAt']));
     }
 
     match /colaboradores/{id} {
       allow read: if isRh() ||
-                     (isGestor() && resource.data.gestorUid == request.auth.uid);
+                     (isGestor() && resource.data.gestorUid == request.auth.uid) ||
+                     (isPessoa() && myPessoaId() == id);
       allow create, delete: if isRh();
-      // Gestor pode atualizar APENAS o próprio time, e somente para
-      // registrar/encerrar suspensões temporárias de contrato (afastamento)
-      // ou marcar pedido de desligamento (`desligamentoSolicitadoId`).
-      // Validamos com `affectedKeys` que ele só está mexendo em campos
-      // permitidos — não pode mudar salário, cargo, empresa etc.
-      // RH continua podendo tudo.
+      // RH pode tudo. Gestor pode atualizar APENAS o próprio time, e
+      // somente para registrar/encerrar suspensões temporárias de
+      // contrato ou marcar pedido de desligamento. O próprio prestador/
+      // colaborador pode adicionar suspensão de contrato (PJ) ou solicitar
+      // desligamento — mesmo conjunto de affectedKeys.
       allow update: if isRh() ||
                        (isGestor() &&
                         resource.data.gestorUid == request.auth.uid &&
                         request.resource.data.gestorUid == resource.data.gestorUid &&
                         request.resource.data.diff(resource.data)
                           .affectedKeys()
-                          .hasOnly(['suspensoes', 'status', 'updatedAt', 'desligamentoSolicitadoId']));
+                          .hasOnly(['suspensoes', 'status', 'updatedAt', 'desligamentoSolicitadoId'])) ||
+                       (isPessoa() && myPessoaId() == id &&
+                        request.resource.data.diff(resource.data)
+                          .affectedKeys()
+                          .hasOnly(['suspensoes', 'status', 'updatedAt', 'desligamentoSolicitadoId',
+                                    'telefone', 'email', 'uid']));
     }
 
     // Desligamentos: gestor cria pedido para alguém do seu time;
     // RH lê tudo, aprova, conclui ou cancela. Gestor lê só os próprios
-    // pedidos (solicitanteUid).
+    // pedidos (solicitanteUid). O próprio colaborador/prestador também
+    // pode abrir pedido voluntário pelo /me (solicitanteUid == auth.uid).
     match /desligamentos/{id} {
       allow read: if isRh() ||
-                     (isGestor() && resource.data.solicitanteUid == request.auth.uid);
+                     (isGestor() && resource.data.solicitanteUid == request.auth.uid) ||
+                     (isPessoa() && resource.data.solicitanteUid == request.auth.uid);
       allow create: if isRh() ||
                        (isGestor() &&
                         request.resource.data.solicitanteUid == request.auth.uid &&
                         request.resource.data.status == 'pendente' &&
-                        // Verifica que o gestor é dono do prestador.
-                        get(/databases/$(database)/documents/colaboradores/$(request.resource.data.colaboradorId)).data.gestorUid == request.auth.uid);
+                        get(/databases/$(database)/documents/colaboradores/$(request.resource.data.colaboradorId)).data.gestorUid == request.auth.uid) ||
+                       (isPessoa() &&
+                        request.resource.data.solicitanteUid == request.auth.uid &&
+                        request.resource.data.status == 'pendente' &&
+                        request.resource.data.colaboradorId == myPessoaId());
       // Só RH atualiza/exclui (aprova, conclui, cancela).
       allow update, delete: if isRh();
+    }
+
+    // === Portal — solicitações ao RH (estagiário/colaborador/prestador) ===
+    // Cada pessoa abre tickets pra RH na rota /me. RH lê tudo e responde.
+    // O próprio solicitante lê e cancela os próprios.
+    match /solicitacoes_rh/{id} {
+      allow read: if isRh() ||
+                     (isSignedIn() && resource.data.solicitanteUid == request.auth.uid);
+      allow create: if isPessoa() &&
+                       request.resource.data.solicitanteUid == request.auth.uid &&
+                       request.resource.data.status == 'aberta' &&
+                       request.resource.data.pessoaId == myPessoaId();
+      // Solicitante pode cancelar o próprio. RH faz qualquer update.
+      allow update: if isRh() ||
+                       (isSignedIn() &&
+                        resource.data.solicitanteUid == request.auth.uid &&
+                        request.resource.data.status == 'cancelada');
+      allow delete: if isRh();
+    }
+
+    // === Portal — pedidos de férias (colaborador CLT) ===
+    match /ferias/{id} {
+      allow read: if isRh() ||
+                     (isSignedIn() && resource.data.solicitanteUid == request.auth.uid);
+      allow create: if isPessoa() &&
+                       request.resource.data.solicitanteUid == request.auth.uid &&
+                       request.resource.data.status == 'pendente' &&
+                       request.resource.data.colaboradorId == myPessoaId();
+      // Solicitante pode cancelar o próprio. RH aprova/recusa.
+      allow update: if isRh() ||
+                       (isSignedIn() &&
+                        resource.data.solicitanteUid == request.auth.uid &&
+                        request.resource.data.status == 'cancelada');
+      allow delete: if isRh();
     }
 
     // Notificações: cada usuário só vê e marca como lida as próprias.

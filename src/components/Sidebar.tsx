@@ -40,6 +40,11 @@ const GESTOR_NAV: NavItem[] = [
   { to: '/gestor/equipe', label: 'Meu time', icon: '⚐' },
 ]
 
+// Estagiário / colaborador / prestador só têm a página /me (Meu perfil).
+const PORTAL_NAV: NavItem[] = [
+  { to: '/me', label: 'Meu perfil', icon: '◔' },
+]
+
 function initials(name?: string | null) {
   if (!name) return 'ET'
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -56,7 +61,12 @@ export default function Sidebar() {
   const { setMobileOpen } = useLayout()
 
   const isRh = profile?.role === 'rh'
-  const navItems = isRh ? NAV[module] : GESTOR_NAV
+  const isGestor = profile?.role === 'gestor'
+  const isPortal = profile?.role === 'estagiario'
+    || profile?.role === 'colaborador'
+    || profile?.role === 'prestador'
+  const navItems = isRh ? NAV[module] : isGestor ? GESTOR_NAV : PORTAL_NAV
+  void isPortal // só pra ficar explícito que é portal abaixo
 
   async function handleLogout() {
     await logout()
